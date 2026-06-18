@@ -62,9 +62,10 @@ pip install -r requirements.txt
 python patisson.py
 ```
 
-> ℹ️ Авторский оригинал `patisson.py` добавляется в `main`. Уже сейчас доступна
-> **побайтово проверенная восстановленная версия** исходника — в ветке
-> [`decompilation`](https://github.com/fedor655/Patisson-Game/tree/decompilation/decompilation).
+> ℹ️ В `main` — **авторский оригинал** `patisson.py`. Существует также
+> побайтово проверенная **восстановленная** версия (реверс-инжиниринг из `.exe`) —
+> в ветке [`decompilation`](https://github.com/fedor655/Patisson-Game/tree/decompilation/decompilation).
+> Сверка показала: все функции восстановленной версии байт-в-байт совпадают с оригиналом.
 
 Игре нужны **ресурсы** (3D-модели `.glb`, текстуры, звуки, музыка, видео меню) —
 они не хранятся в репозитории из-за размера (видео меню одно весит ~224 МБ, что
