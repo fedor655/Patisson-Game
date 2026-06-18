@@ -1,0 +1,4 @@
+ursina==7.0.0
+panda3d==1.10.15
+numpy
+pillow

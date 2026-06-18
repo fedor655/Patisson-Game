@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Ursina / Panda3D runtime caches
+*.bam
+*.prc.user
+
+# Game assets are distributed via the installer in Releases (too large for git;
+# Меню.mp4 alone is ~224 MB, over GitHub's 100 MB/file limit). See ASSETS.md.
+resources/
+assets/
+*.glb
+*.mp4
+*.mp3
+*.wav
+
+# Build / packaging
+build/
+dist/
+*.exe
+*.spec
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
