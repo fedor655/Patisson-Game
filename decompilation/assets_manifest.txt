@@ -1,0 +1,74 @@
+﻿Patisson - asset manifest
+Assets live next to the game exe at runtime; the game loads them by
+relative filename (it does os.chdir to its own folder on startup).
+Original location after install: <InstallDir>\resources\  (and next to Patisson.exe)
+
+FILENAME                                BYTES  TYPE
+------------------------------------------------------------
+Водоём.glb                           17805728  3D model (glTF)
+Дом.glb                              24802292  3D model (glTF)
+Забор.glb                             1003524  3D model (glTF)
+Колодец.glb                          85270580  3D model (glTF)
+Магазин.glb                           5849948  3D model (glTF)
+Патиссон.glb                         14403576  3D model (glTF)
+Прилавок.glb                          2223608  3D model (glTF)
+Росток.glb                            3529272  3D model (glTF)
+Рукоять.glb                          10164676  3D model (glTF)
+Грядка.jpg                               7196  texture
+День.jpg                               175771  texture
+Ночь.jpg                               790544  texture
+Трава.jpg                              334706  texture
+Bee Swarm.mp3                         2685942  music
+Classic Easter.mp3                    2934837  music
+Gymnopedie No.mp3                     4491526  music
+Married Life.mp3                      1672809  music
+Rondo Alla Turca Mozart.mp3           4971761  music
+Spring.mp3                            3391875  music
+Summer Harvest Theme.mp3              2407581  music
+Wynton Marsalis.mp3                  10966248  music
+Меню.mp4                            235115296  video
+icon.png                                70778  image (UI)
+Выход.png                              622197  image (UI)
+Выход2.png                             646039  image (UI)
+ВыходГМ.png                            373810  image (UI)
+ВыходГМ2.png                           365429  image (UI)
+Достижения.png                         625238  image (UI)
+Достижения2.png                        648446  image (UI)
+Достижения3.png                        368487  image (UI)
+Достижения4.png                        360402  image (UI)
+ЗачарованнаяУдочка.png                  14502  image (UI)
+ЗачарованнаяУдочка2.png                290678  image (UI)
+Звук.png                               304253  image (UI)
+Звук2.png                              298100  image (UI)
+ЗолотаяЛейка.png                        60989  image (UI)
+ЗолотаяЛейка2.png                      477294  image (UI)
+Играть.png                             634833  image (UI)
+Играть2.png                            659377  image (UI)
+Лейка.png                               48981  image (UI)
+Лейка1.png                               7902  image (UI)
+Монета.png                               4078  image (UI)
+Настройки.png                          605458  image (UI)
+Настройки2.png                         628027  image (UI)
+Настройки3.png                         368353  image (UI)
+Настройки4.png                         359997  image (UI)
+ПРигру.png                             347221  image (UI)
+ПРигру2.png                            339954  image (UI)
+Рукоять (2).png                        100939  image (UI)
+Рукоять.png                             28305  image (UI)
+Рыба.png                                 1698  image (UI)
+Саженец.png                             77786  image (UI)
+Саженец2.png                           368630  image (UI)
+Стрелка.png                              6856  image (UI)
+Удобрение.png                           17337  image (UI)
+Удобрение2.png                         493084  image (UI)
+Удочка.png                               1555  image (UI)
+Управление.png                         343418  image (UI)
+Управление2.png                        334297  image (UI)
+aaaa.wav                               852046  sound
+Cash.wav                               437838  sound
+click.wav                               55562  sound
+hurt.wav                                32372  sound
+nope.wav                                32590  sound
+Закидывание.wav                        222286  sound
+Колодец.wav                           1437774  sound
+Удочка.wav                             430158  sound
