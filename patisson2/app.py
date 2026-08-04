@@ -26,6 +26,7 @@ from .ui.hud import HUD
 from .ui.menu import MainMenu
 from .world.daynight import DayNightCycle
 from .world.props import Props, plot_positions
+from .world.weather import Precipitation
 from .world.world import World
 
 WEATHER_LABELS = {
@@ -74,6 +75,7 @@ class PatissonApp(ShowBase):
         self.props = Props(self, self.world, self.pipeline)
         self.farm = Farm(self, self.world, self.props, self.cfg.game.day_length)
         self.villagers = Villagers(self, self.world, self.props)
+        self.precip = Precipitation(self, self.world, self.pipeline)
         self.cycle = DayNightCycle(self.cfg.game.day_length,
                                    self.cfg.game.start_hour,
                                    self.cfg.game.season_days)
@@ -611,12 +613,16 @@ class PatissonApp(ShowBase):
         if st.upgrades.lantern_oil:
             night *= 1.7
 
-        wind = Vec4(0.82, 0.57, 0.0,
-                    0.75 if self.weather in ("rain", "snow") else 0.42)
+        gust = 0.75 if self.weather in ("rain", "snow") else 0.42
+        wind = Vec4(0.82, 0.57, 0.0, gust)
+        self.precip.set_weather(self.weather)
+        self.precip.update(dt, cam_pos, self.cycle.total_time,
+                           Vec3(0.82 * gust * 3.2, 0.57 * gust * 3.2, 0.0))
         self.world.update(dt, cam_pos if in_menu else self.player.pos, wind,
                           self.cycle.total_time)
         if self.cycle.season != self.world.season:
             self.world.apply_season(self.cycle.season)
+            self.props.apply_season(self.cycle.season)
         self.props.update(dt, self.cycle.total_time, night)
         self.villagers.update(dt if not blocked else 0.0, self.cycle.hour,
                               self.cycle.total_time)

@@ -53,6 +53,9 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
         if weather is not None:
             app.weather = weather
             app.weather_timer = 9e9
+            # Skip the fade so a capture never lands mid-crossfade.
+            app.precip.set_weather(weather)
+            app.precip.snap()
         settle(3)
         # Let exposure settle on the new lighting.
         sky = app.cycle.state()
@@ -158,17 +161,21 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     shot("14-journal.png")
     app.hud.close_panel()
 
-    # 11. Winter.
-    app.cycle.total_time += cfg.game.day_length * cfg.game.season_days * 3
-    app.world.apply_season(3)
-    app.weather = "snow"
+    # 11. Autumn, then winter. The clock has to move so the game loop agrees
+    # with the season we're asking for.
+    day = cfg.game.day_length
+    season_len = day * cfg.game.season_days
+    app.cycle.total_time += season_len * 2
+    look_at(app.player, (-3.0, 13.0, 1.0), (11.0, -15.0, gz(11.0, -15.0) + 3.0))
+    shot("15-autumn.png", hour=16.0, weather="clear")
+
+    app.cycle.total_time += season_len
     look_at(app.player, (-4.0, 10.0, 0.5), (6.0, -10.0, gz(6.0, -10.0)))
-    shot("15-winter.png", hour=12.0)
+    shot("16-winter.png", hour=12.0, weather="snow")
 
     # 12. Photo mode: the same view, path traced.
-    app.world.apply_season(1)
+    app.cycle.total_time = day * 8 + 10.5 / 24.0 * day     # back to summer
     app.weather = "clear"
-    app.cycle.total_time = 10.5 / 24.0 * cfg.game.day_length
     look_at(app.player, (7.5, 7.0, 1.2), (2.0, -3.0, gz(2.0, -3.0)))
     settle(4)
     app.toggle_photo_mode()
@@ -176,10 +183,10 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     if tracer:
         while tracer.samples < 320:
             app.taskMgr.step()
-        shot("16-pathtraced.png")
+        shot("17-pathtraced.png")
         app.toggle_photo_mode()
     else:
-        print("[shot] 16-pathtraced.png skipped (no compute support)", flush=True)
+        print("[shot] 17-pathtraced.png skipped (no compute support)", flush=True)
 
     print("done ->", out_dir, flush=True)
     sys.stdout.flush()

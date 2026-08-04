@@ -21,6 +21,8 @@ uniform struct p3d_MaterialParameters {
 } p3d_Material;
 
 uniform sampler2D p3d_Texture0;
+// Panda won't apply this for us once we supply our own shader.
+uniform vec4 p3d_ColorScale;
 uniform float u_alphaCutoff;
 uniform float u_hasAlbedoMap;
 uniform float u_microDetail;
@@ -28,7 +30,7 @@ uniform float u_microDetail;
 out vec4 fragColor;
 
 void main() {
-    vec4 albedo4 = p3d_Material.baseColor * vColor;
+    vec4 albedo4 = p3d_Material.baseColor * vColor * p3d_ColorScale;
     if (u_hasAlbedoMap > 0.5) {
         vec4 tex = texture(p3d_Texture0, vUv);
         albedo4 *= vec4(srgbToLinear(tex.rgb), tex.a);

@@ -264,6 +264,20 @@ class Props:
 
     # ---------------------------------------------------------------- update
 
+    # Tree and bush colours are baked into the models, so the season shows
+    # through a colour scale on the foliage roots.
+    SEASON_TINT = {
+        0: (1.10, 1.12, 0.88, 1.0),     # spring: fresh, yellow-green
+        1: (1.0, 1.0, 1.0, 1.0),        # summer: as modelled
+        2: (1.85, 0.92, 0.30, 1.0),     # autumn: warm and turning
+        3: (0.55, 0.62, 0.74, 1.0),     # winter: cold and drained
+    }
+
+    def apply_season(self, season: int) -> None:
+        tint = self.SEASON_TINT.get(season, (1.0, 1.0, 1.0, 1.0))
+        for node in (self.foliage, self.small_foliage):
+            node.setColorScale(*tint)
+
     def update(self, dt: float, time: float, night: float):
         for a in self.animals:
             a.update(dt, time)
