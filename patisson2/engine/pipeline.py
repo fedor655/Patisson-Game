@@ -24,6 +24,8 @@ from panda3d.core import (
     OmniBoundingVolume,
     PointLight,
     PTA_LVecBase3f,
+    RenderState,
+    ShaderAttrib,
     PTA_float,
     Point2,
     Point3,
@@ -104,6 +106,12 @@ class RenderPipeline:
         self.sun_np = self.base.render.attachNewNode(self.sun)
         # A very low sort makes the shadow map render before the scene buffer.
         self.sun.setShadowCaster(True, self.cfg.shadow_size, self.cfg.shadow_size, -3000)
+        # A DirectionalLight is a Camera, so its traversal takes an initial
+        # state. Force a depth-only shader there: otherwise the shadow map is
+        # filled using each node's own shader, and the full PBR fragment stage
+        # runs over four million shadow-map pixels for nothing.
+        self.sun.setInitialState(RenderState.make(
+            ShaderAttrib.make(make_shader("shadow.vert", "shadow.frag")), 100))
         lens = self.sun.getLens()
         e = self.cfg.shadow_extent
         lens.setFilmSize(e * 2, e * 2)
@@ -292,6 +300,10 @@ class RenderPipeline:
         base.render.setShaderInput("u_fogTint", self.pta_fog_tint)
         base.render.setShaderInput("u_time", self.pta_time)
         base.render.setShaderInput("u_ambientScale", self.pta_ambient)
+        # Defaults so every node can be rendered by the shadow pass, which
+        # needs these whether or not the node itself sways.
+        base.render.setShaderInput("u_wind", Vec4(0.82, 0.57, 0.0, 0.0))
+        base.render.setShaderInput("u_windPivot", 0.0)
 
     def prime_exposure(self):
         """Snap exposure on the next update — for scene or mode cuts."""

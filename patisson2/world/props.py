@@ -94,16 +94,36 @@ class Props:
         self._place_lanterns()
         self._batch_static()
 
-    def _batch_static(self):
-        """Merge the static dressing into a handful of geometry nodes.
+    # Static dressing is baked per grid cell of this size, in metres.
+    BATCH_TILE = 40.0
 
-        Every tree, fence and rock was its own NodePath, so a few hundred draw
-        calls and cull traversals per frame — which on this scene costs far more
-        than the triangles themselves. None of it moves, so it can be baked.
+    def _batch_static(self):
+        """Bake the static dressing into one node per spatial tile.
+
+        Every tree, fence and rock started as its own NodePath — a few hundred
+        draw calls and cull traversals a frame. Flattening them all into a
+        single node fixed that but destroyed frustum culling: one node spanning
+        the whole map is either wholly in or wholly out, so every tree in the
+        world was redrawn into the sun's shadow map each frame. Tiling gives
+        both — a handful of draw calls *and* bounds tight enough to cull.
         """
         for node in (self.root, self.foliage, self.small_foliage):
-            node.clearModelNodes()
-            node.flattenStrong()
+            self._batch_by_tile(node)
+
+    def _batch_by_tile(self, root: NodePath) -> int:
+        tile = self.BATCH_TILE
+        buckets: dict[tuple[int, int], list[NodePath]] = {}
+        for child in root.getChildren():
+            p = child.getPos(root)
+            key = (int(math.floor(p.x / tile)), int(math.floor(p.y / tile)))
+            buckets.setdefault(key, []).append(child)
+        for (tx, ty), nodes in buckets.items():
+            holder = root.attachNewNode(f"tile{tx}_{ty}")
+            for n in nodes:
+                n.reparentTo(holder)
+            holder.clearModelNodes()
+            holder.flattenStrong()
+        return len(buckets)
 
     def ground(self, x, y):
         return self.world.height_at(x, y)

@@ -57,6 +57,8 @@ class HUD:
         self.shop_index = 0
         self._last: dict[int, str] = {}
         self._stamina_step = -1
+        self._tool_index = -1
+        self._notif_alpha = [-1] * 5
         self.panel_buttons: list = []
 
         a2d = base.aspect2d
@@ -316,17 +318,31 @@ class HUD:
                 crop = CROPS[state.seed_key]
                 have = state.count(f"seed_{state.seed_key}")
                 label = f"{crop.name} x{have}"
-            selected = (i == state.tool_index)
             self._set(self.tool_labels[i], f"{i+1} {label}")
-            self.tool_labels[i]["fg"] = GOLD if selected else DIM
-            self.tool_slot_bg[i].setColor(
-                (0.30, 0.26, 0.08, 0.75) if selected else (0.05, 0.06, 0.07, 0.55))
+
+        # Assigning to a DirectGui item calls configure(), which rebuilds the
+        # widget. Doing that for every slot every frame cost more than the whole
+        # rest of the frame, so only touch the two slots that actually changed.
+        if state.tool_index != self._tool_index:
+            for i in (self._tool_index, state.tool_index):
+                if not 0 <= i < len(TOOLS):
+                    continue
+                selected = (i == state.tool_index)
+                self.tool_labels[i]["fg"] = GOLD if selected else DIM
+                self.tool_slot_bg[i].setColor(
+                    (0.30, 0.26, 0.08, 0.75) if selected
+                    else (0.05, 0.06, 0.07, 0.55))
+            self._tool_index = state.tool_index
 
         for i, slot in enumerate(self.notif):
             if i < len(state.notifications):
                 text, remaining = state.notifications[i]
                 self._set(slot, text)
-                slot["fg"] = (1, 1, 1, min(1.0, remaining / 0.8))
+                # Quantise the fade so the widget is not rebuilt every frame.
+                alpha = round(min(1.0, remaining / 0.8) * 8)
+                if self._notif_alpha[i] != alpha:
+                    self._notif_alpha[i] = alpha
+                    slot["fg"] = (1, 1, 1, alpha / 8.0)
             else:
                 self._set(slot, "")
 

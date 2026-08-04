@@ -119,7 +119,7 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     look_at(app.player, (7.5, 7.0, 1.4), (12.0, 0.5, gz(12.0, 0.5)))
     shot("05-well.png", hour=9.0)
 
-    look_at(app.player, (16.0, -13.0, 2.4), (7.0, -20.0, gz(7.0, -20.0)))
+    look_at(app.player, (16.0, -13.0, 2.6), (2.0, -24.0, gz(2.0, -24.0) + 2.0))
     shot("06-house.png", hour=17.0)
 
     # 6. Barn, cows and chickens.
