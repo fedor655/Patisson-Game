@@ -9,6 +9,7 @@
 
 in vec3 vViewPos;
 in vec3 vWorldPos;
+in vec4 vClipPos;
 in vec3 vWaveNormal;
 in float vWaveHeight;
 
@@ -22,6 +23,8 @@ uniform float u_time;
 uniform vec3 u_shallowColor;
 uniform vec3 u_deepColor;
 uniform float u_foamWidth;
+uniform sampler2D u_reflection;
+uniform float u_reflectStrength;   // 0 while the reflection pass is idle
 
 out vec4 fragColor;
 
@@ -52,13 +55,34 @@ void main() {
     vec3 N = normalize(p3d_NormalMatrix * Nw);
 
     vec3 toEye = normalize(u_cameraWorld - vWorldPos);
-    float NdotV = saturate(dot(Nw, toEye));
+    // Fresnel follows the flat surface far more than the ripples: the macro
+    // geometry of a pond is a plane, and letting every wavelet swing the term
+    // washes the reflection out to nothing across the whole surface.
+    vec3 fresnelN = normalize(mix(vec3(0.0, 0.0, 1.0), Nw, 0.30));
+    float NdotV = saturate(dot(fresnelN, toEye));
     float fresnel = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
 
-    // Reflection off the sky (the world is open, so the sky dominates).
+    // Sky reflection is the fallback; the planar pass supplies the world.
     vec3 R = reflect(-toEye, Nw);
     R.z = abs(R.z);
     vec3 reflection = sampleSky(R);
+
+    if (u_reflectStrength > 0.0) {
+        // The mirrored camera drew each point at the same screen position this
+        // fragment occupies, so its own clip coordinate is the lookup.
+        vec2 uv = (vClipPos.xy / max(vClipPos.w, 1e-4)) * 0.5 + 0.5;
+        // Ripples distort the lookup; scale it down with distance so far water
+        // doesn't smear.
+        float distFade = 1.0 / (1.0 + length(u_cameraWorld - vWorldPos) * 0.05);
+        uv += (Nw.xy - vec2(0.0, 0.0)) * 0.055 * distFade;
+        // Off-screen samples have nothing behind them: fade back to the sky.
+        vec2 edge = abs(uv - 0.5) * 2.0;
+        float valid = (1.0 - smoothstep(0.86, 1.0, max(edge.x, edge.y)))
+                      * step(0.0, uv.x) * step(uv.x, 1.0)
+                      * step(0.0, uv.y) * step(uv.y, 1.0);
+        vec3 world = texture(u_reflection, clamp(uv, 0.001, 0.999)).rgb;
+        reflection = mix(reflection, world, valid * u_reflectStrength);
+    }
 
     // Sun glint.
     vec3 L = normalize(u_sunDirWorld);

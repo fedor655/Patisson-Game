@@ -18,6 +18,7 @@ uniform vec3 u_cameraWorld;
 
 out vec3 vViewPos;
 out vec3 vWorldPos;
+out vec4 vClipPos;
 out vec3 vWaveNormal;
 out float vWaveHeight;
 
@@ -64,4 +65,5 @@ void main() {
     vec4 viewPos = p3d_ModelViewMatrix * (p3d_Vertex + vec4(offset, 0.0));
     vViewPos = viewPos.xyz;
     gl_Position = p3d_ModelViewProjectionMatrix * (p3d_Vertex + vec4(offset, 0.0));
+    vClipPos = gl_Position;
 }

@@ -170,6 +170,10 @@ class RenderPipeline:
         sky.node().setBounds(OmniBoundingVolume())
         sky.node().setFinal(True)
         sky.hide(MASK_SHADOW)
+        # The planar reflection camera renders with reversed culling, which
+        # would cull this single-sided quad and leave a black hole where the
+        # sky belongs — painted straight onto the pond.
+        sky.setTwoSided(True)
         sky.setShader(make_shader("sky.vert", "sky.frag"), 10)
         self.sky = sky
 

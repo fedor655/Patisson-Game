@@ -108,12 +108,17 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     shot("03-patisson-ripe.png", hour=12.0)
 
     # 4. The pond, from the reeds.
-    from ..world.terrain import POND_CENTRE
+    from ..world.terrain import POND_CENTRE, POND_RADIUS
     px, py = POND_CENTRE
-    cx, cy = px + 13.0, py - 13.0
-    look_at(app.player, (px, py, cfg.world.water_level), (cx, cy, gz(cx, cy)))
+    # From the bank, eye just above the water, so the reflection is visible.
+    ang = math.radians(215)
+    cx = px + math.cos(ang) * (POND_RADIUS + 1.5)
+    cy = py + math.sin(ang) * (POND_RADIUS + 1.5)
+    tx = px - math.cos(ang) * (POND_RADIUS + 6.0)
+    ty = py - math.sin(ang) * (POND_RADIUS + 6.0)
+    look_at(app.player, (tx, ty, gz(tx, ty) + 2.5), (cx, cy, gz(cx, cy) + 0.25))
     st.tool_index = 3
-    shot("04-pond.png", hour=15.0, weather="clear")
+    shot("04-pond.png", hour=8.5, weather="clear")
 
     # 5. The well and the house.
     look_at(app.player, (7.5, 7.0, 1.4), (12.0, 0.5, gz(12.0, 0.5)))

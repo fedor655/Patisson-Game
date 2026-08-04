@@ -14,7 +14,8 @@ from panda3d.core import (
 )
 
 from ..config import WorldConfig
-from ..engine.pipeline import MASK_SHADOW
+from ..engine.pipeline import MASK_REFLECT, MASK_SHADOW
+from ..engine.reflection import PlanarReflection
 from ..engine.shaderlib import make_shader
 from .daynight import SEASON_STYLE
 from .grass import build_blade_node
@@ -125,6 +126,10 @@ class World:
         self.terrain_np = node
 
     def _build_water(self):
+        from .terrain import POND_CENTRE, POND_RADIUS
+        self.pond_centre = POND_CENTRE
+        self.pond_radius = POND_RADIUS
+        self.reflection = PlanarReflection(self.base, self.cfg.water_level)
         bounds = water_bounds(self.terrain)
         if bounds is None:
             self.water_np = None
@@ -140,10 +145,14 @@ class World:
         node.setShaderInput("u_shallowColor", Vec3(0.30, 0.62, 0.60))
         node.setShaderInput("u_deepColor", Vec3(0.045, 0.16, 0.22))
         node.setShaderInput("u_foamWidth", 0.42)
+        node.setShaderInput("u_reflection", self.reflection.texture)
+        node.setShaderInput("u_reflectStrength", 0.0)
         node.setTransparency(TransparencyAttrib.MAlpha)
         node.setBin("transparent", 20)
         node.setDepthWrite(False)
         node.hide(MASK_SHADOW)
+        # The water must not appear in its own reflection.
+        node.hide(MASK_REFLECT)
         self.water_np = node
         self.water_bounds = bounds
 
@@ -160,6 +169,9 @@ class World:
         node.setShaderInput("u_waterLevel", self.cfg.water_level)
         node.setShaderInput("u_heightScale", 0.42)
         node.hide(MASK_SHADOW)
+        # Grass is the most expensive thing on screen and reads as a green
+        # smear at reflection resolution; the terrain under it is enough.
+        node.hide(MASK_REFLECT)
         self.grass_np = node
 
     # ----------------------------------------------------------------- season
@@ -184,6 +196,9 @@ class World:
         self.mask.commit()
         if self.water_np is not None:
             self.water_np.setShaderInput("u_time", time)
+            self.reflection.update(player_pos, self.pond_centre, self.pond_radius)
+            self.water_np.setShaderInput(
+                "u_reflectStrength", 0.85 if self.reflection.active else 0.0)
         self.grass_np.setShaderInput("u_center", Vec3(player_pos.x, player_pos.y, 0).xy)
         self.grass_np.setShaderInput("u_time", time)
         self.grass_np.setShaderInput("u_wind", wind)
