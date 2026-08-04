@@ -55,7 +55,10 @@ class RenderPipeline:
         self.base = base
         self.cfg = cfg
         self.time = 0.0
+        # sun_dir drives the sky; light_dir drives the shadow-casting light
+        # (they part company after sunset, when the moon takes over).
         self.sun_dir = Vec3(0.3, 0.4, 0.86).normalized()
+        self.light_dir = Vec3(0.3, 0.4, 0.86).normalized()
         self.sun_color = Vec3(1.0, 0.96, 0.90) * 24.0
         self.cloud_cover = 0.42
         self.sky_intensity = 55.0
@@ -302,7 +305,7 @@ class RenderPipeline:
         """Position the sun's shadow frustum around the focus, snapped to texels."""
         cfg = self.cfg
         dist = 190.0
-        self.sun_np.setPos(focus + self.sun_dir * dist)
+        self.sun_np.setPos(focus + self.light_dir * dist)
         self.sun_np.lookAt(focus)
 
         # Quantise the focus in the light's own basis to stop shadow crawl.
@@ -315,7 +318,7 @@ class RenderPipeline:
                          local.y,
                          round(local.z / texel) * texel)
         world = light_mat.xformPoint(snapped)
-        self.sun_np.setPos(Vec3(world) + self.sun_dir * dist)
+        self.sun_np.setPos(Vec3(world) + self.light_dir * dist)
         self.sun_np.lookAt(Vec3(world))
 
     def update(self, dt: float, cam_pos: Vec3, focus: Vec3 | None = None):
@@ -336,7 +339,7 @@ class RenderPipeline:
         self.sky.setShaderInput("u_time", self.time)
         self.sky.setShaderInput("u_cloudCover", self.cloud_cover)
 
-        base.render.setShaderInput("u_sunDirWorld", self.sun_dir)
+        base.render.setShaderInput("u_sunDirWorld", self.light_dir)
         base.render.setShaderInput("u_cameraWorld", cam_pos)
         base.render.setShaderInput("u_time", self.time)
         base.render.setShaderInput("u_fogTint", self.fog_tint)

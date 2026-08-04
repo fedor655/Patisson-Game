@@ -95,18 +95,26 @@ vec3 atmAmbient(vec3 rayDir, vec3 sunDir, float sunIntensity) {
 // --- night -----------------------------------------------------------------
 
 float atmStars(vec3 rd, float time) {
-    // Cell-hash star field on the sphere; density falls off near the horizon.
-    vec3 p = rd * 180.0;
-    vec3 cell = floor(p);
-    vec3 f = fract(p) - 0.5;
-    vec3 h = hash33(cell);
-    if (h.z > 0.055) return 0.0;
+    // Cell-hash star field. Cells are built from the direction projected onto
+    // the dominant axis, which spreads them evenly instead of clumping the way
+    // a raw 3D cell grid does near the axes.
+    vec3 a = abs(rd);
+    vec2 uv;
+    if (a.y >= a.x && a.y >= a.z)      uv = rd.xz / a.y;
+    else if (a.x >= a.z)               uv = rd.yz / a.x;
+    else                               uv = rd.xy / a.z;
+
+    vec2 p = uv * 96.0;
+    vec2 cell = floor(p);
+    vec2 f = fract(p) - 0.5;
+    vec3 h = hash33(vec3(cell, 1.7));
+    if (h.z > 0.10) return 0.0;
     vec2 offset = (h.xy - 0.5) * 0.7;
-    float d = length(f.xy - offset) + abs(f.z) * 0.6;
-    float star = smoothstep(0.30, 0.0, d);
-    float twinkle = 0.55 + 0.45 * sin(time * 2.3 + h.x * 43.0);
-    float horizon = smoothstep(-0.05, 0.35, rd.y);
-    return star * twinkle * horizon * (0.4 + 12.0 * (0.055 - h.z));
+    float d = length(f - offset);
+    float star = smoothstep(0.22, 0.0, d);
+    float twinkle = 0.6 + 0.4 * sin(time * 2.3 + h.x * 43.0);
+    float horizon = smoothstep(-0.02, 0.22, rd.y);
+    return star * twinkle * horizon * (0.35 + 5.0 * (0.10 - h.z));
 }
 
 vec3 atmMoon(vec3 rd, vec3 moonDir) {
@@ -116,8 +124,10 @@ vec3 atmMoon(vec3 rd, vec3 moonDir) {
     vec3 shadowDir = normalize(moonDir + vec3(0.0045, 0.0018, 0.0));
     float shadow = smoothstep(0.99950, 0.99980, dot(rd, shadowDir));
     float lit = clamp(disk - shadow * 0.82, 0.0, 1.0);
-    float glow = pow(saturate(d), 2200.0) * 0.35;
-    return vec3(1.00, 0.97, 0.90) * (lit * 9.0 + glow);
+    float glow = pow(saturate(d), 2200.0) * 0.12;
+    // Kept modest on purpose: a brighter disk survives the bloom chain as a
+    // huge blocky white smear rather than a moon.
+    return vec3(1.00, 0.97, 0.90) * (lit * 2.4 + glow);
 }
 
 // --- clouds ----------------------------------------------------------------
@@ -156,7 +166,7 @@ vec4 atmClouds(vec3 rd, vec3 sunDir, float time, float coverage, vec3 skyTint) {
     col += vec3(1.0, 0.85, 0.6) * pow(sunAmount, 24.0) * 0.6 * (1.0 - shade);
 
     float sunUp = saturate(sunDir.y * 4.0 + 0.15);
-    col *= mix(0.18, 1.0, sunUp);
+    col *= mix(0.035, 1.0, sunUp);
 
     return vec4(col, density * 0.92);
 }

@@ -1,4 +1,4 @@
-ursina==7.0.0
-panda3d==1.10.15
-numpy
-pillow
+panda3d>=1.10.15
+panda3d-gltf>=1.2
+numpy>=1.24
+pillow>=10.0

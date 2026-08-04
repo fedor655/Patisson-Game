@@ -10,14 +10,15 @@ env/
 *.bam
 *.prc.user
 
-# Game assets are distributed via the installer in Releases (too large for git;
-# Меню.mp4 alone is ~224 MB, over GitHub's 100 MB/file limit). See ASSETS.md.
+# Patisson 1.0 assets ship in the Releases installer — too large for git
+# (Меню.mp4 alone is ~224 MB, over GitHub's 100 MB/file limit). See ASSETS.md.
 resources/
-assets/
-*.glb
 *.mp4
 *.mp3
 *.wav
+
+# 2.0 generates its own models from code and they are small, so assets/ is
+# tracked. Only the 1.0 resource dump stays out.
 
 # Build / packaging
 build/

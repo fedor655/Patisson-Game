@@ -36,6 +36,9 @@ vec3 acesFilm(vec3 x) {
 
 void main() {
     vec3 color = texture(u_color, vUv).rgb;
+    // Never let a stray NaN/Inf from an HDR pass reach the tonemap.
+    color = clamp(mix(color, vec3(0.0), vec3(isnan(color) || isinf(color))),
+                  vec3(0.0), vec3(65000.0));
 
     float ao = texture(u_ao, vUv).r;
     ao = mix(1.0, ao, u_aoStrength);

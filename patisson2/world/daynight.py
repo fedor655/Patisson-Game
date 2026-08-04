@@ -20,7 +20,8 @@ SEASON_STYLE = {
 
 @dataclass
 class SkyState:
-    sun_dir: Vec3
+    sun_dir: Vec3       # true solar direction — drives the sky and its colour
+    light_dir: Vec3     # dominant light: the sun by day, the moon at night
     sun_color: Vec3
     exposure: float
     cloud_cover: float
@@ -114,7 +115,7 @@ class DayNightCycle:
         if night:
             # Moonlight: dim, cold, and coming from roughly the opposite side.
             colour = Vec3(0.44, 0.56, 0.92)
-            intensity = 0.85
+            intensity = 1.7
 
         season = self.season
         cover = 0.40 + SEASON_STYLE[season][2]
@@ -122,7 +123,7 @@ class DayNightCycle:
         cover += 0.18 * math.sin(self.total_time / self.day_length * 1.7)
         cover = max(0.05, min(0.85, cover))
 
-        exposure = 0.165 if not night else 0.62
+        exposure = 0.165 if not night else 0.46
         if 0.0 < alt < 0.16:
             exposure = 0.165 + (0.16 - alt) * 2.6
 
@@ -132,12 +133,20 @@ class DayNightCycle:
         if night:
             fog_tint = Vec3(0.78, 0.86, 1.12)
 
+        # The sky must always see the real solar direction, or a midnight sky
+        # renders as daylight. The shadow-casting light is a separate thing:
+        # after dark it becomes the moon, roughly opposite the sun.
+        light_dir = sun
+        if night:
+            light_dir = Vec3(-sun.x, -sun.y, max(-sun.z, 0.20)).normalized()
+
         return SkyState(
-            sun_dir=sun if not night else Vec3(-sun.x, -sun.y, max(-sun.z, 0.12)).normalized(),
+            sun_dir=sun,
+            light_dir=light_dir,
             sun_color=colour * intensity,
             exposure=exposure,
             cloud_cover=cover,
             fog_tint=fog_tint,
-            ambient_scale=1.0 if not night else 0.55,
+            ambient_scale=1.0 if not night else 0.95,
             is_night=night,
         )

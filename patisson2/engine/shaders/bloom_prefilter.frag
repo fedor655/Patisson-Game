@@ -25,7 +25,14 @@ void main() {
     c += tap(vUv + vec2(0.0, u_texel.y));
     c += tap(vUv - vec2(0.0, u_texel.y));
     c /= 8.0;
-    c = c / max(1.0 - luminance(c), 1e-4);   // undo the weighting
+    // Undo the Karis weighting. The denominator has to be clamped well away
+    // from zero: at 1e-4 a bright pixel (the moon, a lantern) overflows half
+    // float, the Inf spreads through the blur chain and the tonemap turns the
+    // whole upscaled bloom tile black.
+    c = c / max(1.0 - luminance(c), 0.02);
+    // Cap what any one source can contribute, so a small very bright thing
+    // (moon, lantern, sun glint) glows rather than washing the frame out.
+    c = min(c, vec3(14.0));
 
     float lum = luminance(c);
     float soft = clamp(lum - u_threshold + u_knee, 0.0, 2.0 * u_knee);
