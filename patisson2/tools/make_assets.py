@@ -252,12 +252,18 @@ def plank_wall(w: float, h: float, colour, planks: int = 7, thick=0.06) -> Mesh:
     for i in range(planks):
         shade = 1.0 - 0.06 * (i % 3)
         c = (colour[0] * shade, colour[1] * shade, colour[2] * shade)
-        m.extend(box(w, thick, step * 0.94, c, origin="corner")
+        m.extend(box(w, thick, step * 0.94, c, origin="base")
                  .translate(0, 0, i * step))
     return m
 
 
 def gable_roof(w: float, d: float, h: float, colour, overhang=0.35) -> Mesh:
+    """Two slopes meeting at a ridge along Y, with gable ends.
+
+    Winding matters: faces wound the other way point their normals into the
+    building and get backface-culled, which reads as a roof with half of it
+    missing.
+    """
     m = Mesh()
     hw, hd = w / 2 + overhang, d / 2 + overhang
     apex_f = (0.0, -hd, h)
@@ -265,10 +271,11 @@ def gable_roof(w: float, d: float, h: float, colour, overhang=0.35) -> Mesh:
     fl, fr = (-hw, -hd, 0.0), (hw, -hd, 0.0)
     bl, br = (-hw, hd, 0.0), (hw, hd, 0.0)
     dark = (colour[0] * 0.82, colour[1] * 0.82, colour[2] * 0.82)
-    m.add_quad(fl, bl, apex_b, apex_f, colour)
-    m.add_quad(apex_f, apex_b, br, fr, dark)
-    m.add_face(fl, apex_f, fr, (colour[0] * 0.7, colour[1] * 0.7, colour[2] * 0.7))
-    m.add_face(bl, br, apex_b, (colour[0] * 0.7, colour[1] * 0.7, colour[2] * 0.7))
+    gable = (colour[0] * 0.7, colour[1] * 0.7, colour[2] * 0.7)
+    m.add_quad(fl, apex_f, apex_b, bl, colour)      # left slope, normal -X +Z
+    m.add_quad(fr, br, apex_b, apex_f, dark)        # right slope, normal +X +Z
+    m.add_face(fl, fr, apex_f, gable)               # front gable, normal -Y
+    m.add_face(bl, apex_b, br, gable)               # back gable, normal +Y
     return m
 
 
@@ -280,9 +287,9 @@ def make_house():
 
     W, D, H = 6.4, 7.8, 3.2
     for sx, sy, rot in ((0, -D / 2, 0), (0, D / 2, 0)):
-        body.extend(plank_wall(W, H, PLANK, 8).translate(sx - W / 2, sy, 0))
+        body.extend(plank_wall(W, H, PLANK, 8).translate(sx, sy, 0))
     for sx in (-W / 2, W / 2):
-        w = plank_wall(D, H, PLANK, 8).rotate_z(90).translate(sx, -D / 2, 0)
+        w = plank_wall(D, H, PLANK, 8).rotate_z(90).translate(sx, 0, 0)
         body.extend(w)
     # Gable infill.
     for sy in (-D / 2, D / 2):
@@ -295,11 +302,11 @@ def make_house():
     trim.extend(box(0.14, D + 0.9, 0.14, WOOD_DARK).translate(0, 0, H + 1.72))
     for sx in (-W / 2, W / 2):
         for sy in (-D / 2, D / 2):
-            trim.extend(box(0.20, 0.20, H, WOOD_DARK, origin="corner")
+            trim.extend(box(0.20, 0.20, H, WOOD_DARK, origin="base")
                         .translate(sx, sy, 0))
     # Door.
-    trim.extend(box(1.0, 0.12, 2.0, WOOD_DARK, origin="corner")
-                .translate(-0.5, -D / 2 - 0.07, 0))
+    trim.extend(box(1.0, 0.12, 2.0, WOOD_DARK, origin="base")
+                .translate(0, -D / 2 - 0.07, 0))
     trim.extend(sphere(0.055, GOLD).translate(0.32, -D / 2 - 0.14, 1.05))
     # Windows.
     for pos in ((-2.0, -D / 2), (2.0, -D / 2), (-W / 2, -1.4), (-W / 2, 1.4),
@@ -315,10 +322,10 @@ def make_house():
                      .translate(x + (ox * 1.3 if along_y else 0),
                                 y + (0 if along_y else (-0.12 if y < 0 else 0.12)), 1.75))
     # Chimney.
-    trim.extend(box(0.62, 0.62, 2.0, STONE, origin="corner").translate(1.6, 1.2, H + 0.4))
+    trim.extend(box(0.62, 0.62, 2.2, STONE, origin="base").translate(1.6, 1.2, H - 0.2))
     # Step.
-    trim.extend(box(1.6, 0.7, 0.16, STONE, origin="corner")
-                .translate(-0.8, -D / 2 - 0.75, 0))
+    trim.extend(box(1.6, 0.7, 0.16, STONE, origin="base")
+                .translate(0, -D / 2 - 0.75, 0))
 
     return [Part(body, "walls", roughness=0.88),
             Part(trim, "trim", roughness=0.82),
@@ -333,9 +340,9 @@ def make_barn():
     W, D, H = 7.2, 9.0, 4.0
     red = srgb(150, 62, 52)
     for sy in (-D / 2, D / 2):
-        body.extend(plank_wall(W, H, red, 9).translate(-W / 2, sy, 0))
+        body.extend(plank_wall(W, H, red, 9).translate(0, sy, 0))
     for sx in (-W / 2, W / 2):
-        body.extend(plank_wall(D, H, red, 9).rotate_z(90).translate(sx, -D / 2, 0))
+        body.extend(plank_wall(D, H, red, 9).rotate_z(90).translate(sx, 0, 0))
     for sy in (-D / 2, D / 2):
         g = Mesh()
         g.add_face((-W / 2, sy, H), (W / 2, sy, H), (0, sy, H + 2.3), red)
@@ -344,16 +351,16 @@ def make_barn():
     # White trim boards, the classic barn look.
     for sy in (-D / 2 - 0.02, D / 2 + 0.02):
         trim.extend(box(W + 0.1, 0.09, 0.18, WHITE).translate(0, sy, H - 0.1))
-        trim.extend(box(0.22, 0.09, H, WHITE, origin="corner").translate(0, sy, 0))
-    trim.extend(box(2.6, 0.14, 3.0, WOOD_DARK, origin="corner")
-                .translate(-1.3, -D / 2 - 0.08, 0))
-    trim.extend(box(0.10, 0.16, 3.0, WHITE, origin="corner")
+        trim.extend(box(0.22, 0.09, H, WHITE, origin="base").translate(0, sy, 0))
+    trim.extend(box(2.6, 0.14, 3.0, WOOD_DARK, origin="base")
+                .translate(0, -D / 2 - 0.08, 0))
+    trim.extend(box(0.10, 0.16, 3.0, WHITE, origin="base")
                 .translate(0, -D / 2 - 0.16, 0))
     trim.extend(box(0.10, 3.6, 0.10, WOOD_DARK).rotate_z(0)
                 .translate(0, -D / 2 - 0.16, 3.05))
     # Hay loft opening.
-    trim.extend(box(1.3, 0.12, 1.1, WOOD_DARK, origin="corner")
-                .translate(-0.65, -D / 2 - 0.09, H + 0.35))
+    trim.extend(box(1.3, 0.12, 1.1, WOOD_DARK, origin="base")
+                .translate(0, -D / 2 - 0.09, H + 0.35))
     return [Part(body, "walls", roughness=0.9),
             Part(trim, "trim", roughness=0.85),
             Part(roof, "roof", roughness=0.92)]
@@ -377,7 +384,7 @@ def make_well():
                      .translate(math.cos(a) * 0.83, math.sin(a) * 0.83, h))
     # Posts and roof.
     for sx in (-0.62, 0.62):
-        wood.extend(box(0.14, 0.14, 1.75, WOOD, origin="corner").translate(sx, 0, 0.7))
+        wood.extend(box(0.14, 0.14, 1.75, WOOD, origin="base").translate(sx, 0, 0.7))
     wood.extend(gable_roof(1.9, 1.5, 0.52, WOOD_DARK, overhang=0.22)
                 .translate(0, 0, 2.45))
     # Winding drum, crank and rope.
@@ -402,7 +409,7 @@ def make_market_stall():
     W, D = 2.6, 1.5
     for sx in (-W / 2, W / 2):
         for sy in (-D / 2, D / 2):
-            wood.extend(box(0.09, 0.09, 2.05, WOOD, origin="corner").translate(sx, sy, 0))
+            wood.extend(box(0.09, 0.09, 2.05, WOOD, origin="base").translate(sx, sy, 0))
     wood.extend(box(W + 0.2, D + 0.1, 0.09, PLANK).translate(0, 0, 0.95))
     wood.extend(box(W + 0.2, D + 0.1, 0.07, WOOD_DARK).translate(0, 0, 0.30))
     # Striped awning.
@@ -421,8 +428,8 @@ def make_market_stall():
     r = _rng(12)
     for i in range(3):
         x = -0.8 + i * 0.8
-        goods.extend(box(0.42, 0.36, 0.20, WOOD_LIGHT, origin="corner")
-                     .translate(x - 0.21, -0.18, 1.0))
+        goods.extend(box(0.42, 0.36, 0.20, WOOD_LIGHT, origin="base")
+                     .translate(x, 0, 1.0))
         for k in range(4):
             goods.extend(sphere(0.075, [SQUASH_RIPE, srgb(206, 60, 48), srgb(224, 126, 46)][i])
                          .scale(1, 1, 0.72)
@@ -436,8 +443,8 @@ def make_market_stall():
 def make_fence():
     """One 2.4 m section of post-and-rail fence."""
     m = Mesh()
-    m.extend(box(0.12, 0.12, 1.15, WOOD_DARK, origin="corner").translate(-1.2, 0, 0))
-    m.extend(box(0.12, 0.12, 1.15, WOOD_DARK, origin="corner").translate(1.2, 0, 0))
+    m.extend(box(0.12, 0.12, 1.15, WOOD_DARK, origin="base").translate(-1.2, 0, 0))
+    m.extend(box(0.12, 0.12, 1.15, WOOD_DARK, origin="base").translate(1.2, 0, 0))
     for z in (0.42, 0.82):
         m.extend(box(2.4, 0.07, 0.13, WOOD).translate(0, 0, z))
     m.extend(box(0.09, 0.06, 1.0, WOOD).rotate_y(14).translate(0, 0.02, 0.62))
@@ -446,7 +453,7 @@ def make_fence():
 
 def make_signpost():
     m = Mesh()
-    m.extend(box(0.11, 0.11, 1.85, WOOD_DARK, origin="corner"))
+    m.extend(box(0.11, 0.11, 1.85, WOOD_DARK, origin="base"))
     board = box(0.86, 0.06, 0.40, WOOD_LIGHT).translate(0.30, 0.0, 1.55)
     m.extend(board)
     m.extend(box(0.78, 0.02, 0.07, WOOD_DARK).translate(0.30, -0.035, 1.62))
@@ -458,7 +465,7 @@ def make_scarecrow():
     wood = Mesh()
     cloth = Mesh()
     straw = Mesh()
-    wood.extend(box(0.09, 0.09, 1.9, WOOD_DARK, origin="corner"))
+    wood.extend(box(0.09, 0.09, 1.9, WOOD_DARK, origin="base"))
     wood.extend(box(1.35, 0.07, 0.07, WOOD_DARK).translate(0, 0, 1.42))
     cloth.extend(box(0.52, 0.30, 0.72, CLOTH_BLUE).translate(0, 0, 1.20))
     for sx in (-0.55, 0.55):
@@ -474,7 +481,7 @@ def make_scarecrow():
         a = r.uniform(0, 360)
         d = r.uniform(0.0, 0.28)
         straw.extend(box(0.012, 0.012, r.uniform(0.10, 0.22), srgb(206, 182, 110),
-                         origin="corner")
+                         origin="base")
                      .rotate_y(r.uniform(50, 110)).rotate_z(a)
                      .translate(math.cos(math.radians(a)) * d * 0.4,
                                 math.sin(math.radians(a)) * d * 0.4,
@@ -482,7 +489,7 @@ def make_scarecrow():
     for sx in (-0.72, 0.72):
         for i in range(5):
             straw.extend(box(0.010, 0.010, r.uniform(0.10, 0.18), srgb(206, 182, 110),
-                             origin="corner")
+                             origin="base")
                          .rotate_y(80 + r.uniform(-25, 25)).rotate_z(r.uniform(0, 360))
                          .translate(sx, 0, 1.42))
     return [Part(wood, "post", roughness=0.9),
@@ -492,13 +499,13 @@ def make_scarecrow():
 
 def make_crate():
     m = Mesh()
-    m.extend(box(0.60, 0.60, 0.48, WOOD_LIGHT, origin="corner").translate(-0.3, -0.3, 0))
+    m.extend(box(0.60, 0.60, 0.48, WOOD_LIGHT, origin="base"))
     for z in (0.03, 0.42):
         for ax in (0, 90):
             m.extend(box(0.64, 0.05, 0.06, WOOD_DARK).rotate_z(ax).translate(0, 0, z))
     for sx in (-0.3, 0.3):
         for sy in (-0.3, 0.3):
-            m.extend(box(0.07, 0.07, 0.48, WOOD_DARK, origin="corner").translate(sx, sy, 0))
+            m.extend(box(0.07, 0.07, 0.48, WOOD_DARK, origin="base").translate(sx, sy, 0))
     return [Part(m, "crate", roughness=0.9)]
 
 
@@ -528,7 +535,7 @@ def make_lantern():
     frame.extend(revolve([(0.09, 0.0), (0.10, 0.03), (0.055, 0.05)], 10, IRON))
     for i in range(4):
         a = math.radians(90 * i + 45)
-        frame.extend(box(0.014, 0.014, 0.19, IRON, origin="corner")
+        frame.extend(box(0.014, 0.014, 0.19, IRON, origin="base")
                      .translate(math.cos(a) * 0.062, math.sin(a) * 0.062, 0.05))
     frame.extend(revolve([(0.001, 0.30), (0.10, 0.25), (0.095, 0.235)], 10, IRON))
     frame.extend(tube([(0, 0, 0.30), (0, 0, 0.36), (0.0, 0.0, 0.40)],
@@ -718,7 +725,7 @@ def make_chicken():
     comb.extend(box(0.03, 0.02, 0.05, COMB).translate(0.235, 0, 0.31))
     for sy in (-0.055, 0.055):
         legs.extend(cylinder(0.014, 0.11, BEAK, 6).translate(0.02, sy, 0.0))
-        legs.extend(box(0.075, 0.05, 0.014, BEAK, origin="corner").translate(0.0, sy - 0.025, 0))
+        legs.extend(box(0.075, 0.05, 0.014, BEAK, origin="base").translate(0.025, sy, 0))
     eyes = Mesh()
     for sy in (-0.055, 0.055):
         eyes.extend(sphere(0.017, srgb(28, 24, 22)).translate(0.215, sy, 0.385))
@@ -832,8 +839,8 @@ def make_villager(shirt, trousers, hair_col=HAIR, seed: int = 1):
     cloth.extend(revolve([(0.19, 0.44), (0.21, 0.68), (0.20, 0.88)], 12, trousers).smooth(50))
     for sy in (-0.115, 0.115):
         cloth.extend(cylinder(0.075, 0.46, trousers, 8).translate(0, sy, 0.42))
-        boots.extend(box(0.20, 0.13, 0.10, srgb(72, 54, 42), origin="corner")
-                     .translate(-0.05, sy - 0.065, 0.0))
+        boots.extend(box(0.20, 0.13, 0.10, srgb(72, 54, 42), origin="base")
+                     .translate(0.02, sy, 0.0))
     for sy in (-0.26, 0.26):
         arm = tube([(0, sy, 1.28), (0.02, sy * 1.12, 1.02), (0.05, sy * 1.05, 0.80)],
                    [0.062, 0.055, 0.048], shirt, 8)

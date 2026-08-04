@@ -166,6 +166,13 @@ def lerp3(a: Vec, b: Vec, t: float) -> Vec:
 
 def box(sx: float, sy: float, sz: float, color: Vec,
         origin: str = "center") -> Mesh:
+    """Axis-aligned box.
+
+    ``origin`` only controls the Z axis: "center" straddles z=0, "base" sits on
+    it. X and Y are *always* centred — the old name for "base" was "corner",
+    which read as if it moved all three axes and led to walls being built half a
+    width out of place.
+    """
     m = Mesh()
     hx, hy = sx / 2, sy / 2
     z0, z1 = (-sz / 2, sz / 2) if origin == "center" else (0.0, sz)

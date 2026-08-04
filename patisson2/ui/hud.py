@@ -57,6 +57,7 @@ class HUD:
         self.shop_index = 0
         self._last: dict[int, str] = {}
         self._stamina_step = -1
+        self.panel_buttons: list = []
 
         a2d = base.aspect2d
         self.root = a2d.attachNewNode("hud")
@@ -164,10 +165,36 @@ class HUD:
         self.panel_mode = mode
         self.panel.show()
         self.refresh_panel()
+        if mode == "pause":
+            self._build_pause_buttons()
 
     def close_panel(self):
         self.panel_mode = None
         self.panel.hide()
+        for b in self.panel_buttons:
+            b.destroy()
+        self.panel_buttons.clear()
+
+    def _build_pause_buttons(self):
+        """Pause needs a way out that is not just Esc."""
+        from direct.gui.DirectGui import DirectButton
+        app = self.base
+        entries = [
+            ("Продолжить", app.on_escape),
+            ("Сохранить", app.on_save),
+            ("В главное меню", app.open_main_menu),
+            ("Выход", app.userExit),
+        ]
+        for i, (label, cmd) in enumerate(entries):
+            b = DirectButton(
+                parent=self.panel, text=label, text_font=self.font,
+                text_fg=INK, text_scale=0.045, text_pos=(0, -0.015),
+                frameColor=((0.12, 0.14, 0.12, 0.9), (0.26, 0.32, 0.18, 0.95),
+                            (0.34, 0.42, 0.22, 1.0), (0.1, 0.1, 0.1, 0.6)),
+                frameSize=(-0.24, 0.24, -0.042, 0.052), relief=1,
+                pos=(-0.75 + i * 0.50, 0, -0.52), command=cmd)
+            b.setTransparency(TransparencyAttrib.MAlpha)
+            self.panel_buttons.append(b)
 
     def refresh_panel(self):
         if self.panel_mode == "shop":
@@ -232,7 +259,7 @@ class HUD:
                 if not audio.music:
                     lines.append("  (музыка ещё генерируется…)")
             self.panel_body.setText("\n".join(lines))
-            self.panel_hint.setText("Esc — продолжить")
+            self.panel_hint.setText("")
 
     def move_shop_cursor(self, delta: int):
         self.shop_index = (self.shop_index + delta) % len(SHOP_ITEMS)

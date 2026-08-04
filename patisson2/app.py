@@ -23,6 +23,7 @@ from .game.npc import Villagers
 from .game.player import Player
 from .game.state import GameState, SHOP_ITEMS, load_game, save_game
 from .ui.hud import HUD
+from .ui.menu import MainMenu
 from .world.daynight import DayNightCycle
 from .world.props import Props, plot_positions
 from .world.world import World
@@ -95,11 +96,12 @@ class PatissonApp(ShowBase):
         self.paused = False
         self.fishing = None            # (state, timer)
         self.photo_mode = False
+        self.mode = "menu"             # menu | playing
+        self.menu = MainMenu(self, self.hud)
         self._setup_input()
-        self._grab_mouse(True)
 
         self.taskMgr.add(self.update, "game-update")
-        self.state.notify("Ферма ждёт. Возьмите мотыгу (1) и вскопайте грядку.", 8.0)
+        self.open_main_menu()
 
     # ------------------------------------------------------------------ input
 
@@ -148,6 +150,71 @@ class PatissonApp(ShowBase):
             self.win.requestProperties(props)
         self.player.locked = not grab
 
+    # ------------------------------------------------------------------ modes
+
+    def open_main_menu(self):
+        """Return to the title screen; the world keeps rendering behind it."""
+        self.mode = "menu"
+        self.paused = False
+        self.hud.close_panel()
+        self.hud.hide_dialogue()
+        self.hud.root.hide()
+        self.menu.show()
+        self._grab_mouse(False)
+        self.keys.clear()
+        # A settled mid-morning is the most flattering light for the title.
+        self.cycle.total_time = 9.4 / 24.0 * self.cfg.game.day_length
+        self.weather = "clear"
+        self.player.frozen = True
+        self.pipeline.prime_exposure()
+
+    def _enter_world(self):
+        self.mode = "playing"
+        self.menu.hide()
+        self.pipeline.prime_exposure()
+        if self.hud.visible:
+            self.hud.root.show()
+        self.player.frozen = False
+        self.paused = False
+        self._grab_mouse(True)
+
+    def menu_new_game(self):
+        self.sound("click", 0.6)
+        self.reset_world()
+        self._enter_world()
+        self.state.notify(
+            "Ферма ждёт. Возьмите мотыгу (1) и вскопайте грядку.", 8.0)
+
+    def menu_continue(self):
+        self.sound("click", 0.6)
+        if load_game(self.state, self.farm, self.cycle, self.player):
+            self._enter_world()
+            self.state.notify("Игра загружена")
+        else:
+            self.sound("error", 0.6)
+            self.menu.info.setText("Не удалось прочитать сохранение.")
+
+    def reset_world(self):
+        """Fresh save state and a fresh set of starting plots."""
+        self.state.__init__(self.cfg.game)
+        if self.audio:
+            self.state.sound = self.audio.play
+        for plot in list(self.farm.plots):
+            self.farm._clear_model(plot)
+        self.farm.plots.clear()
+        self.farm.harvest_log.clear()
+        self.world.mask.data[:, :, :3] = 0
+        self.world.mask._dirty = True
+        for x, y in plot_positions():
+            self.farm.add_plot(x, y)
+        self.cycle.total_time = (self.cfg.game.start_hour / 24.0
+                                 * self.cfg.game.day_length)
+        self.player.pos.x, self.player.pos.y = 2.0, -9.0
+        self.player.pos.z = self.world.height_at(2.0, -9.0)
+        self.player.heading, self.player.pitch = 0.0, -6.0
+        self.player.vel.set(0, 0, 0)
+        self.weather = "clear"
+
     # --------------------------------------------------------------- commands
 
     def nudge_volume(self, delta: float):
@@ -187,6 +254,9 @@ class PatissonApp(ShowBase):
 
     def on_escape(self):
         self.sound("click", 0.45)
+        if self.mode == "menu":
+            self.menu.back()
+            return
         if self.hud.dialogue:
             self.hud.hide_dialogue()
             return
@@ -200,6 +270,8 @@ class PatissonApp(ShowBase):
         self._grab_mouse(False)
 
     def toggle_shop(self):
+        if self.mode == "menu":
+            return
         self.sound("click", 0.5)
         if self.hud.panel_mode == "shop":
             self.hud.close_panel()
@@ -211,6 +283,8 @@ class PatissonApp(ShowBase):
             self._grab_mouse(False)
 
     def toggle_journal(self):
+        if self.mode == "menu":
+            return
         self.sound("click", 0.5)
         if self.hud.panel_mode == "journal":
             self.hud.close_panel()
@@ -246,6 +320,8 @@ class PatissonApp(ShowBase):
             self.state.notify("Продавать можно у прилавка")
 
     def toggle_photo_mode(self):
+        if self.mode == "menu":
+            return
         tracer = getattr(self, "pathtracer", None)
         if tracer is None:
             from .engine.pathtracer import PathTracer
@@ -338,7 +414,7 @@ class PatissonApp(ShowBase):
         return "", ""
 
     def on_interact(self):
-        if self.paused or self.hud.panel_mode:
+        if self.mode == "menu" or self.paused or self.hud.panel_mode:
             return
         if self.hud.dialogue:
             self.hud.hide_dialogue()
@@ -430,7 +506,7 @@ class PatissonApp(ShowBase):
 
     def on_secondary(self):
         """Right click: fertilise the plot under the cursor."""
-        if self.paused or self.hud.panel_mode:
+        if self.mode == "menu" or self.paused or self.hud.panel_mode:
             return
         plot, _ = self._aim_plot()
         if plot is None or plot.crop is None:
@@ -498,7 +574,8 @@ class PatissonApp(ShowBase):
         if not self.paused and self.mouse_grabbed:
             self._mouse_look()
 
-        blocked = self.paused or self.hud.panel_mode is not None
+        in_menu = self.mode == "menu"
+        blocked = in_menu or self.paused or self.hud.panel_mode is not None
         if not blocked:
             self.cycle.advance(dt)
             self._update_weather(dt)
@@ -507,8 +584,12 @@ class PatissonApp(ShowBase):
             for e in events:
                 st.notify(e)
 
-        self.player.update(dt, self.keys, blocked=blocked)
-        self.player.apply_to_camera(self.camera)
+        if in_menu:
+            cam_pos = self.menu.update(dt, self.camera, self.world)
+        else:
+            self.player.update(dt, self.keys, blocked=blocked)
+            self.player.apply_to_camera(self.camera)
+            cam_pos = self.player.eye
         st.stamina_frac = self.player.stamina / self.cfg.game.stamina_max
 
         sky = self.cycle.state()
@@ -532,15 +613,16 @@ class PatissonApp(ShowBase):
 
         wind = Vec4(0.82, 0.57, 0.0,
                     0.75 if self.weather in ("rain", "snow") else 0.42)
-        self.world.update(dt, self.player.pos, wind, self.cycle.total_time)
+        self.world.update(dt, cam_pos if in_menu else self.player.pos, wind,
+                          self.cycle.total_time)
         if self.cycle.season != self.world.season:
             self.world.apply_season(self.cycle.season)
         self.props.update(dt, self.cycle.total_time, night)
         self.villagers.update(dt if not blocked else 0.0, self.cycle.hour,
                               self.cycle.total_time)
-        p.update(dt, self.player.eye, self.player.pos)
+        p.update(dt, cam_pos, Vec3(cam_pos.x, cam_pos.y, cam_pos.z))
 
-        if 23.5 <= self.cycle.hour or self.cycle.hour < 0.5:
+        if not in_menu and (23.5 <= self.cycle.hour or self.cycle.hour < 0.5):
             st.unlock("night_owl")
         if st.coins >= 1000:
             st.unlock("rich")
@@ -558,8 +640,9 @@ class PatissonApp(ShowBase):
                 self.audio.play("thunder", 0.45)
 
         st.update_notifications(dt)
-        prompt, tip = self.context()
-        self.hud.set_prompt(prompt, tip)
+        if not in_menu:
+            prompt, tip = self.context()
+            self.hud.set_prompt(prompt, tip)
         self.hud.update(self.cycle, st, WEATHER_LABELS[self.weather])
 
         tracer = getattr(self, "pathtracer", None)

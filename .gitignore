@@ -31,3 +31,6 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Claude Code workspace
+.claude/

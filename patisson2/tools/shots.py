@@ -64,6 +64,11 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
 
     settle(8)
 
+    # Title screen first, then drop into the world for the rest.
+    shot("00-main-menu.png")
+    app.menu_new_game()
+    settle(4)
+
     terrain = app.world.terrain
     st = app.state
 

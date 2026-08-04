@@ -70,6 +70,7 @@ class RenderPipeline:
         self._sun_colour_key = None
         self._sun_focus_key = None
         self._size_key = None
+        self._exposure_primed = False
 
         base.render.setShaderAuto(False)
         base.render.setAntialias(0)
@@ -292,6 +293,10 @@ class RenderPipeline:
         base.render.setShaderInput("u_time", self.pta_time)
         base.render.setShaderInput("u_ambientScale", self.pta_ambient)
 
+    def prime_exposure(self):
+        """Snap exposure on the next update — for scene or mode cuts."""
+        self._exposure_primed = False
+
     def set_ambient_scale(self, value: float):
         self.pta_ambient[0] = value
 
@@ -412,8 +417,15 @@ class RenderPipeline:
                 hq.setShaderInput("u_direction", Vec3(float(div) / w, 0.0, 0.0).xy)
                 vq.setShaderInput("u_direction", Vec3(0.0, float(div) / h, 0.0).xy)
 
-        # Exposure eases towards the target so day/night transitions are smooth.
-        self._exposure += (self.exposure_target - self._exposure) * min(dt * 0.9, 1.0)
+        # Exposure eases towards the target so day/night transitions are smooth,
+        # but the very first frame (and any hard cut) snaps instead — otherwise
+        # the opening seconds render badly overexposed.
+        if self._exposure_primed:
+            self._exposure += ((self.exposure_target - self._exposure)
+                               * min(dt * 0.9, 1.0))
+        else:
+            self._exposure = self.exposure_target
+            self._exposure_primed = True
         self.composite.setShaderInput("u_exposure", self._exposure)
         self.composite.setShaderInput("u_time", self.time)
 
