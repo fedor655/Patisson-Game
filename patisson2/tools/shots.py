@@ -39,7 +39,7 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     cfg.graphics.vsync = False
     configure(cfg, offscreen=True)
 
-    app = PatissonApp(cfg, offscreen=True)
+    app = PatissonApp(cfg, offscreen=True, audio=False)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def settle(frames=6):

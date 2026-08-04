@@ -15,6 +15,7 @@ from panda3d.core import (
     loadPrcFileData,
 )
 
+from .audio.manager import AudioManager
 from .config import Config
 from .engine.pipeline import RenderPipeline
 from .game.farming import CROPS, CROP_ORDER, Farm
@@ -46,7 +47,6 @@ def configure(cfg: Config, offscreen: bool = False):
     loadPrcFileData("", "textures-power-2 none")
     loadPrcFileData("", "gl-coordinate-system default")
     loadPrcFileData("", "notify-level-glgsg warning")
-    loadPrcFileData("", "audio-library-name null")
     if g.fullscreen and not offscreen:
         loadPrcFileData("", "fullscreen #t")
     if offscreen:
@@ -54,7 +54,8 @@ def configure(cfg: Config, offscreen: bool = False):
 
 
 class PatissonApp(ShowBase):
-    def __init__(self, cfg: Config | None = None, offscreen: bool = False):
+    def __init__(self, cfg: Config | None = None, offscreen: bool = False,
+                 audio: bool = True):
         self.cfg = cfg or Config()
         super().__init__()
         self.offscreen = offscreen
@@ -79,6 +80,9 @@ class PatissonApp(ShowBase):
         self.state.stamina_frac = 1.0
         self.player = Player(self, self.world, self.cfg.game, start=(2.0, -9.0))
         self.hud = HUD(self, self.state, self.cfg)
+        self.audio = AudioManager(self) if audio else None
+        if self.audio:
+            self.state.sound = self.audio.play
 
         for x, y in plot_positions():
             self.farm.add_plot(x, y)
@@ -124,6 +128,9 @@ class PatissonApp(ShowBase):
         self.accept("f5", self.on_save)
         self.accept("f9", self.on_load)
         self.accept("p", self.toggle_photo_mode)
+        self.accept("minus", self.nudge_volume, [-0.1])
+        self.accept("=", self.nudge_volume, [0.1])
+        self.accept("m", self.toggle_mute)
         self.accept("enter", self.on_confirm)
         for i in range(1, 6):
             self.accept(str(i), self.select_tool, [i - 1])
@@ -143,7 +150,32 @@ class PatissonApp(ShowBase):
 
     # --------------------------------------------------------------- commands
 
+    def nudge_volume(self, delta: float):
+        if not self.audio:
+            return
+        level = self.audio.nudge_master(delta)
+        self.state.notify(f"Громкость: {level * 100:.0f}%", 1.6)
+        self.hud.refresh_panel()
+
+    def toggle_mute(self):
+        if not self.audio:
+            return
+        self._muted = not getattr(self, "_muted", False)
+        if self._muted:
+            self._pre_mute = self.audio.master
+            self.audio.set_volumes(master=0.0)
+            self.state.notify("Звук выключен", 1.6)
+        else:
+            self.audio.set_volumes(master=getattr(self, "_pre_mute", 0.9))
+            self.state.notify("Звук включён", 1.6)
+        self.hud.refresh_panel()
+
+    def sound(self, name: str, volume: float = 1.0, pitch: float = 0.0):
+        if self.audio:
+            self.audio.play(name, volume, pitch)
+
     def select_tool(self, index: int):
+        self.sound("click", 0.5)
         from .game.state import TOOLS
         self.state.tool_index = max(0, min(len(TOOLS) - 1, index))
 
@@ -154,6 +186,7 @@ class PatissonApp(ShowBase):
             self.state.cycle_seed(delta)
 
     def on_escape(self):
+        self.sound("click", 0.45)
         if self.hud.dialogue:
             self.hud.hide_dialogue()
             return
@@ -167,6 +200,7 @@ class PatissonApp(ShowBase):
         self._grab_mouse(False)
 
     def toggle_shop(self):
+        self.sound("click", 0.5)
         if self.hud.panel_mode == "shop":
             self.hud.close_panel()
             self.paused = False
@@ -177,6 +211,7 @@ class PatissonApp(ShowBase):
             self._grab_mouse(False)
 
     def toggle_journal(self):
+        self.sound("click", 0.5)
         if self.hud.panel_mode == "journal":
             self.hud.close_panel()
             self.paused = False
@@ -188,7 +223,9 @@ class PatissonApp(ShowBase):
 
     def on_confirm(self):
         if self.hud.panel_mode == "shop":
+            before = self.state.coins
             self.state.buy(self.hud.shop_key)
+            self.sound("coin" if self.state.coins != before else "error", 0.8)
             self.hud.refresh_panel()
 
     def on_save(self):
@@ -203,8 +240,9 @@ class PatissonApp(ShowBase):
 
     def on_sell(self):
         if self._near_stall():
-            self.state.sell_all()
+            self.sound("coin" if self.state.sell_all() else "error", 0.9)
         else:
+            self.sound("error", 0.6)
             self.state.notify("Продавать можно у прилавка")
 
     def toggle_photo_mode(self):
@@ -309,6 +347,7 @@ class PatissonApp(ShowBase):
 
         npc = self.villagers.nearest(self.player.pos, 2.8)
         if npc is not None:
+            self.sound("click", 0.5)
             self.hud.show_dialogue(npc.name, npc.talk())
             return
 
@@ -323,8 +362,10 @@ class PatissonApp(ShowBase):
             if plot is None and target is not None:
                 new = self.farm.till(target.x, target.y)
                 if new is not None:
+                    self.sound("dig", 0.9)
                     st.notify("Грядка вскопана")
                 else:
+                    self.sound("error", 0.6)
                     st.notify("Здесь копать нельзя")
             elif plot is not None and plot.crop is not None and plot.health <= 0.02:
                 self.farm.clear(plot)
@@ -332,13 +373,17 @@ class PatissonApp(ShowBase):
         elif tool == "can":
             if self._near_well() or self._near_water():
                 st.water = st.upgrades.can_capacity
+                self.sound("well" if self._near_well() else "splash", 0.7)
                 st.notify("Лейка полна")
             elif plot is not None and st.water >= 1.0:
                 if self.farm.water_plot(plot):
                     st.water = max(0.0, st.water - 1.0)
+                    self.sound("water", 0.8)
                 else:
+                    self.sound("error", 0.5)
                     st.notify("Грядка уже полита")
             elif plot is not None:
+                self.sound("error", 0.5)
                 st.notify("Лейка пуста")
 
         elif tool == "seeds":
@@ -346,19 +391,23 @@ class PatissonApp(ShowBase):
                 key = st.seed_key
                 if st.take(f"seed_{key}"):
                     self.farm.plant(plot, key)
+                    self.sound("plant", 0.85)
                     st.unlock("first_seed")
                     st.notify(f"Посажено: {CROPS[key].name}")
                     growing = sum(1 for p in self.farm.plots if p.crop)
                     if growing >= 10:
                         st.unlock("green_thumb")
                 else:
+                    self.sound("error", 0.6)
                     st.notify(f"Нет семян «{CROPS[key].name}»")
 
         elif tool == "rod":
             if self._near_water():
                 delay = 1.4 if st.upgrades.enchanted_rod else 3.0
                 self.fishing = ["wait", self.rng.uniform(delay * 0.6, delay * 1.6)]
+                self.sound("cast", 0.8)
             else:
+                self.sound("error", 0.6)
                 st.notify("Подойдите к воде")
 
         elif tool == "basket":
@@ -366,6 +415,7 @@ class PatissonApp(ShowBase):
                 result = self.farm.harvest(plot)
                 if result:
                     key, count = result
+                    self.sound("harvest", 0.9)
                     st.give(key, count)
                     st.record("harvest", key, count)
                     st.unlock("first_harvest")
@@ -386,14 +436,18 @@ class PatissonApp(ShowBase):
         if plot is None or plot.crop is None:
             return
         if not self.state.take("fertilizer"):
+            self.sound("error", 0.6)
             self.state.notify("Нет удобрения (купите в лавке)")
             return
         self.farm.feed_plot(plot)
+        self.sound("plant", 0.7)
         self.state.notify("Удобрено")
 
     def _fishing_input(self):
         phase = self.fishing[0]
         if phase == "bite":
+            self.sound("splash", 0.8)
+            self.sound("catch", 0.7)
             self.state.fish += 1
             self.state.total_fish += 1
             self.state.record("fish")
@@ -491,6 +545,18 @@ class PatissonApp(ShowBase):
         if st.coins >= 1000:
             st.unlock("rich")
 
+        if self.audio:
+            speed = math.hypot(self.player.vel.x, self.player.vel.y) / 4.4
+            event = self.audio.update(
+                dt, hour=self.cycle.hour, is_night=sky.is_night,
+                weather=self.weather, moving=0.0 if blocked else speed,
+                on_ground=self.player.on_ground, paused=blocked)
+            if event == "critter" and not blocked:
+                self._critter_sound()
+            if self.weather == "rain" and not blocked \
+                    and self.rng.random() < dt * 0.035:
+                self.audio.play("thunder", 0.45)
+
         st.update_notifications(dt)
         prompt, tip = self.context()
         self.hud.set_prompt(prompt, tip)
@@ -504,6 +570,23 @@ class PatissonApp(ShowBase):
             st.photo_progress = None
 
         return task.cont
+
+    def _critter_sound(self):
+        """Let a nearby animal pipe up, attenuated by distance."""
+        near = [a for a in self.props.animals
+                if (a.node.getPos() - self.player.pos).lengthSquared() < 640.0]
+        if not near:
+            return
+        animal = self.rng.choice(near)
+        name = animal.node.getName()
+        if name.startswith("chicken"):
+            sound, falloff = "cluck", 20.0
+        elif name.startswith("cow"):
+            sound, falloff = "moo", 34.0
+        else:
+            return
+        self.audio.play_at(sound, animal.node.getPos(), self.player.eye,
+                           falloff=falloff, volume=0.8, pitch=0.08)
 
     def _mouse_look(self):
         if not self.win.getProperties().getForeground():

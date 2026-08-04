@@ -217,12 +217,20 @@ class HUD:
                      "  1..5 — инструменты,  Q/колесо — выбор семян",
                      "  T — магазин,  J — журнал,  F5 — сохранить,  F9 — загрузить",
                      "  P — фотореж. (трассировка лучей),  F1 — интерфейс",
+                     "  M — звук вкл/выкл,  - / = — громкость",
                      "  F — продать всё у прилавка,  Esc — пауза",
                      "", "В СУМКЕ", ""]
             lines += inv or ["  (пусто)"]
             lines += [""] + (seeds or ["  Семян нет"])
             lines += ["", f"  Рыба: {self.state.fish}",
                       f"  Монеты: {self.state.coins}"]
+            audio = getattr(self.base, "audio", None)
+            if audio is not None and audio.enabled:
+                lines += ["", "ЗВУК", "",
+                          f"  Громкость: {audio.master * 100:.0f}%",
+                          f"  Музыка: {audio.music_volume * 100:.0f}%"]
+                if not audio.music:
+                    lines.append("  (музыка ещё генерируется…)")
             self.panel_body.setText("\n".join(lines))
             self.panel_hint.setText("Esc — продолжить")
 

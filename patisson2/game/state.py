@@ -112,6 +112,8 @@ class GameState:
         # Mirrored from the player each frame so the HUD needs only state.
         self.stamina_frac = 1.0
         self.photo_progress = None
+        # Set by the app so unlocks and quests can play their fanfare.
+        self.sound = None
 
     # ------------------------------------------------------------ inventory
 
@@ -206,6 +208,8 @@ class GameState:
             if q.progress >= q.goal:
                 q.done = True
                 self.coins += q.reward
+                if self.sound:
+                    self.sound("achieve", 0.7)
                 self.notify(f"Задание выполнено: {q.title} (+{q.reward})")
         self.check_quests()
 
@@ -221,6 +225,8 @@ class GameState:
     def unlock(self, key: str):
         if key in ACHIEVEMENTS and key not in self.achievements:
             self.achievements.add(key)
+            if self.sound:
+                self.sound("achieve", 0.75)
             self.notify(f"Достижение: {ACHIEVEMENTS[key]}")
 
     # ---------------------------------------------------------------- save
