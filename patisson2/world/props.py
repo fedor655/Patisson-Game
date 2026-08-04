@@ -286,12 +286,14 @@ class Props:
     # ---------------------------------------------------------------- update
 
     # Tree and bush colours are baked into the models, so the season shows
-    # through a colour scale on the foliage roots.
+    # through a colour scale on the foliage roots. A scale can only multiply —
+    # it cannot desaturate — so turning a saturated green canopy golden needs a
+    # much larger red multiplier than the numbers look like they should be.
     SEASON_TINT = {
-        0: (1.10, 1.12, 0.88, 1.0),     # spring: fresh, yellow-green
+        0: (1.14, 1.14, 0.84, 1.0),     # spring: fresh, yellow-green
         1: (1.0, 1.0, 1.0, 1.0),        # summer: as modelled
-        2: (1.85, 0.92, 0.30, 1.0),     # autumn: warm and turning
-        3: (0.55, 0.62, 0.74, 1.0),     # winter: cold and drained
+        2: (3.10, 1.10, 0.20, 1.0),     # autumn: golden
+        3: (0.62, 0.70, 0.84, 1.0),     # winter: cold and drained
     }
 
     def apply_season(self, season: int) -> None:

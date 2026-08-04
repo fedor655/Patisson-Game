@@ -101,6 +101,52 @@ class Mesh:
         self.colors = out
         return self
 
+    def recompute_normals(self):
+        """Rebuild flat normals from current positions, after a deformation."""
+        for a, b, c in self.faces:
+            n = face_normal(self.verts[a], self.verts[b], self.verts[c])
+            self.norms[a] = n
+            self.norms[b] = n
+            self.norms[c] = n
+        return self
+
+    def warp_radial(self, centre: Vec, amount: float, seed: int = 0,
+                    freq: float = 3.0):
+        """Push vertices in or out along their direction from ``centre``.
+
+        The displacement is a hash of the *quantised direction*, not of the
+        vertex index — faces duplicate their vertices, so two copies of the same
+        corner have to land on the same place or the surface tears open.
+        """
+        def scale(p: Vec) -> Vec:
+            d = (p[0] - centre[0], p[1] - centre[1], p[2] - centre[2])
+            n = math.sqrt(d[0] ** 2 + d[1] ** 2 + d[2] ** 2)
+            if n < 1e-9:
+                return p
+            u = (d[0] / n, d[1] / n, d[2] / n)
+            key = (round(u[0] * freq, 3), round(u[1] * freq, 3),
+                   round(u[2] * freq, 3), seed)
+            h = (hash(key) & 0xFFFF) / 65535.0
+            k = 1.0 + (h - 0.5) * 2.0 * amount
+            return (centre[0] + u[0] * n * k,
+                    centre[1] + u[1] * n * k,
+                    centre[2] + u[2] * n * k)
+
+        self.verts = [scale(p) for p in self.verts]
+        return self.recompute_normals()
+
+    def shade_by_height(self, low: float, high: float, factor: float = 0.55):
+        """Darken vertices towards the bottom — cheap baked occlusion for a
+        canopy, where the underside genuinely sees far less sky."""
+        span = max(high - low, 1e-6)
+        out = []
+        for p, c in zip(self.verts, self.colors):
+            t = min(max((p[2] - low) / span, 0.0), 1.0)
+            k = factor + (1.0 - factor) * t
+            out.append((c[0] * k, c[1] * k, c[2] * k))
+        self.colors = out
+        return self
+
     def smooth(self, angle_deg: float = 62.0):
         """Average normals between faces that meet at a shallow angle."""
         key_map: dict[tuple, list[int]] = {}

@@ -604,67 +604,124 @@ def make_watering_can():
 # ----------------------------------------------------------------- nature
 
 
-def _branch(m: Mesh, start, direction, length, radius, depth, rng, colour, foliage,
-            leaf_colour):
+def _leaf_clump(radius: float, colour, seed: int, squash: float = 0.84) -> Mesh:
+    """One lumpy mass of foliage.
+
+    A single smooth sphere per branch reads as a lollipop; a canopy built from
+    a dozen of these overlapping, each with its own irregular silhouette, reads
+    as leaves.
+    """
+    m = sphere(radius, colour, 6, 4).scale(1.0, 1.0, squash)
+    m.warp_radial((0.0, 0.0, 0.0), 0.42, seed, freq=2.2)
+    return m
+
+
+def _branch(m: Mesh, start, direction, length, radius, depth, rng, colour,
+            tips: list, droop: float = 0.0):
+    """Recursive limb. Collects its tips so the canopy can be grown on them."""
     end = (start[0] + direction[0] * length,
            start[1] + direction[1] * length,
-           start[2] + direction[2] * length)
-    mid = (start[0] + direction[0] * length * 0.5 + rng.uniform(-0.05, 0.05),
-           start[1] + direction[1] * length * 0.5 + rng.uniform(-0.05, 0.05),
-           start[2] + direction[2] * length * 0.5)
-    m.extend(tube([start, mid, end], [radius, radius * 0.75, radius * 0.55],
-                  colour, 6 if depth < 2 else 5))
+           start[2] + direction[2] * length - droop * length)
+    mid = (start[0] + direction[0] * length * 0.5 + rng.uniform(-0.06, 0.06),
+           start[1] + direction[1] * length * 0.5 + rng.uniform(-0.06, 0.06),
+           start[2] + direction[2] * length * 0.5 - droop * length * 0.25)
+    m.extend(tube([start, mid, end], [radius, radius * 0.72, radius * 0.48],
+                  colour, 6 if depth >= 2 else 5))
     if depth <= 0:
-        foliage.extend(sphere(length * 0.95, leaf_colour, 8, 5)
-                       .scale(1.0, 1.0, 0.82)
-                       .translate(*end))
+        tips.append(end)
         return
-    for _ in range(rng.randint(2, 3)):
-        d = (direction[0] + rng.uniform(-0.65, 0.65),
-             direction[1] + rng.uniform(-0.65, 0.65),
-             direction[2] + rng.uniform(-0.25, 0.30))
+    for _ in range(2):
+        d = (direction[0] + rng.uniform(-0.75, 0.75),
+             direction[1] + rng.uniform(-0.7, 0.7),
+             direction[2] + rng.uniform(-0.3, 0.28))
         n = math.sqrt(sum(c * c for c in d)) or 1.0
         d = (d[0] / n, d[1] / n, d[2] / n)
-        _branch(m, end, d, length * rng.uniform(0.58, 0.74), radius * 0.62,
-                depth - 1, rng, colour, foliage, leaf_colour)
+        _branch(m, end, d, length * rng.uniform(0.56, 0.72), radius * 0.60,
+                depth - 1, rng, colour, tips, droop)
+
+
+def _grow_canopy(foliage: Mesh, tips: list, rng, palette, seed: int,
+                 size=(0.40, 0.72), per_tip=(2, 3)) -> None:
+    """Cluster leaf masses around every branch tip, then bake in some shading."""
+    if not tips:
+        return
+    index = 0
+    for tip in tips:
+        for _ in range(rng.randint(*per_tip)):
+            index += 1
+            r = rng.uniform(*size)
+            colour = rng.choice(palette)
+            clump = _leaf_clump(r, colour, seed * 977 + index * 37)
+            clump.translate(tip[0] + rng.gauss(0.0, r * 0.55),
+                            tip[1] + rng.gauss(0.0, r * 0.55),
+                            tip[2] + rng.gauss(0.0, r * 0.45))
+            foliage.extend(clump)
+    zs = [p[2] for p in foliage.verts]
+    foliage.shade_by_height(min(zs), max(zs), 0.52)
 
 
 def make_tree(kind: str, seed: int):
     rng = _rng(seed)
     trunk = Mesh()
     foliage = Mesh()
+
     if kind == "pine":
         h = rng.uniform(5.5, 7.5)
-        trunk.extend(revolve([(0.26, 0.0), (0.16, h * 0.55), (0.09, h)], 10, srgb(94, 68, 48)))
-        tiers = 7
+        trunk.extend(revolve([(0.30, 0.0), (0.26, 0.35), (0.16, h * 0.55),
+                              (0.09, h)], 10, srgb(94, 68, 48)).smooth(45))
+        tiers = 8
         for i in range(tiers):
             t = i / tiers
-            z = h * (0.22 + 0.70 * t)
-            r = (1.75 - 1.35 * t) * rng.uniform(0.92, 1.06)
-            foliage.extend(cone(r, r * 1.35, PINE if i % 2 else srgb(58, 104, 62), 12)
-                           .translate(0, 0, z))
+            z = h * (0.18 + 0.74 * t)
+            r = (1.85 - 1.45 * t) * rng.uniform(0.90, 1.08)
+            colour = PINE if i % 2 else srgb(58, 104, 62)
+            # Lobed cones give the tiers a ragged edge instead of a clean circle.
+            tier = revolve([(r, 0.0), (r * 0.55, r * 0.62), (0.001, r * 1.45)],
+                           13, colour, lobes=5, lobe_depth=0.16,
+                           twist=rng.uniform(-12, 12))
+            foliage.extend(tier.translate(0, 0, z))
+        foliage.jitter_colors(0.07, seed)
+        zs = [p[2] for p in foliage.verts]
+        foliage.shade_by_height(min(zs), max(zs), 0.62)
         return [Part(trunk, "trunk", roughness=0.94),
                 Part(foliage, "needles", roughness=0.9)]
 
-    bark = BARK_BIRCH if kind == "birch" else BARK
-    leafc = FOLIAGE_2 if kind == "birch" else FOLIAGE
-    h = rng.uniform(2.4, 3.4) if kind == "birch" else rng.uniform(2.0, 2.9)
-    trunk.extend(revolve([(0.34, 0.0), (0.26, 0.6), (0.22, h)], 10, bark).smooth(50))
-    if kind == "birch":
-        for i in range(9):
+    birch = kind == "birch"
+    bark = BARK_BIRCH if birch else BARK
+    palette = ([FOLIAGE_2, srgb(120, 164, 74), srgb(96, 140, 56)] if birch
+               else [FOLIAGE, FOLIAGE_2, srgb(62, 104, 40)])
+    h = rng.uniform(2.8, 3.8) if birch else rng.uniform(2.2, 3.1)
+
+    # Root flare, then a slightly leaning trunk.
+    trunk.extend(revolve([(0.40, 0.0), (0.30, 0.35), (0.24, h * 0.6),
+                          (0.20, h)], 10, bark).smooth(50))
+    if birch:
+        for _ in range(11):
             z = rng.uniform(0.3, h * 0.95)
             a = rng.uniform(0, 360)
-            trunk.extend(box(0.10, 0.02, 0.05, srgb(58, 54, 50))
+            trunk.extend(box(0.11, 0.02, 0.045, srgb(58, 54, 50))
                          .rotate_z(a)
-                         .translate(math.cos(math.radians(a)) * 0.24,
-                                    math.sin(math.radians(a)) * 0.24, z))
+                         .translate(math.cos(math.radians(a)) * 0.23,
+                                    math.sin(math.radians(a)) * 0.23, z))
+
+    tips: list = []
+    droop = 0.22 if birch else 0.06
     for _ in range(rng.randint(3, 4)):
-        d = (rng.uniform(-0.6, 0.6), rng.uniform(-0.6, 0.6), rng.uniform(0.7, 1.0))
+        d = (rng.uniform(-0.75, 0.75), rng.uniform(-0.75, 0.75),
+             rng.uniform(0.55, 1.0))
         n = math.sqrt(sum(c * c for c in d))
         d = (d[0] / n, d[1] / n, d[2] / n)
-        _branch(trunk, (0, 0, h), d, rng.uniform(1.1, 1.6), 0.15, 2, rng, bark,
-                foliage, leafc)
-    foliage.jitter_colors(0.10, seed).smooth(80)
+        _branch(trunk, (0, 0, h * rng.uniform(0.72, 0.95)), d,
+                rng.uniform(1.0, 1.5), 0.14, 2, rng, bark, tips, droop)
+
+    # A couple of masses over the trunk itself, so the canopy reads as one
+    # crown rather than separate blobs floating on the ends of the branches.
+    core = [(0.0, 0.0, h + rng.uniform(0.35, 0.75))]
+    _grow_canopy(foliage, core, rng, palette, seed + 7,
+                 size=(0.55, 0.85), per_tip=(2, 3))
+    _grow_canopy(foliage, tips, rng, palette, seed,
+                 size=(0.40, 0.70) if birch else (0.46, 0.82))
+    foliage.jitter_colors(0.09, seed)
     return [Part(trunk, "trunk", roughness=0.94),
             Part(foliage, "leaves", roughness=0.88)]
 
@@ -672,13 +729,15 @@ def make_tree(kind: str, seed: int):
 def make_bush(seed: int = 4):
     rng = _rng(seed)
     m = Mesh()
-    for _ in range(5):
-        r = rng.uniform(0.30, 0.50)
-        m.extend(sphere(r, FOLIAGE if rng.random() < 0.5 else FOLIAGE_2, 9, 6)
-                 .scale(1.0, 1.0, 0.8)
-                 .translate(rng.uniform(-0.35, 0.35), rng.uniform(-0.35, 0.35),
-                            r * 0.75 + rng.uniform(0, 0.22)))
-    m.jitter_colors(0.09, seed)
+    for i in range(6):
+        r = rng.uniform(0.28, 0.46)
+        colour = rng.choice([FOLIAGE, FOLIAGE_2, srgb(62, 104, 40)])
+        m.extend(_leaf_clump(r, colour, seed * 131 + i * 17)
+                 .translate(rng.uniform(-0.32, 0.32), rng.uniform(-0.32, 0.32),
+                            r * 0.72 + rng.uniform(0, 0.20)))
+    zs = [p[2] for p in m.verts]
+    m.shade_by_height(min(zs), max(zs), 0.58)
+    m.jitter_colors(0.08, seed)
     return [Part(m, "bush", roughness=0.9)]
 
 
