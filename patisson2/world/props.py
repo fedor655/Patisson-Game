@@ -74,6 +74,8 @@ class Props:
         self.pipeline = pipeline
         self.root = world.root.attachNewNode("props")
         self.foliage = world.root.attachNewNode("foliage")
+        # Anything that moves has to stay out of the flatten pass below.
+        self.dynamic = world.root.attachNewNode("dynamic")
         self.animals: list = []
         self.lanterns: list = []
         self.rng = random.Random(world.cfg.seed)
@@ -82,11 +84,25 @@ class Props:
         pipeline.apply_scene_shader(self.foliage, wind=0.55, wind_pivot=0.4,
                                     micro_detail=0.06)
 
+        pipeline.apply_scene_shader(self.dynamic, micro_detail=0.08)
+
         self._place_buildings()
         self._place_fences()
         self._scatter_nature()
         self._place_animals()
         self._place_lanterns()
+        self._batch_static()
+
+    def _batch_static(self):
+        """Merge the static dressing into a handful of geometry nodes.
+
+        Every tree, fence and rock was its own NodePath, so a few hundred draw
+        calls and cull traversals per frame — which on this scene costs far more
+        than the triangles themselves. None of it moves, so it can be baked.
+        """
+        for node in (self.root, self.foliage, self.small_foliage):
+            node.clearModelNodes()
+            node.flattenStrong()
 
     def ground(self, x, y):
         return self.world.height_at(x, y)
@@ -150,7 +166,7 @@ class Props:
         # Trees: a ring of woodland around the farm, thinning towards the middle.
         placed = 0
         attempts = 0
-        while placed < 190 and attempts < 6000:
+        while placed < 115 and attempts < 6000:
             attempts += 1
             a = r.uniform(0, math.tau)
             d = 26.0 + abs(r.gauss(0, 1)) * 52.0
@@ -163,18 +179,24 @@ class Props:
                   r.uniform(0, 360), r.uniform(0.8, 1.35))
             placed += 1
 
-        for _ in range(120):
+        for _ in range(90):
             a, d = r.uniform(0, math.tau), r.uniform(8, 105)
             x, y = math.cos(a) * d, math.sin(a) * d
             if free(x, y, 4.0):
                 place(self.foliage, "bush", (x, y, self.ground(x, y) - 0.05),
                       r.uniform(0, 360), r.uniform(0.7, 1.3))
 
-        for _ in range(150):
+        # Flowers and reeds are too small to read as shadows but not too small
+        # to cost a shadow-map pass, so they are excluded from it.
+        self.small_foliage = self.world.root.attachNewNode("small-foliage")
+        self.small_foliage.hide(MASK_SHADOW)
+        self.pipeline.apply_scene_shader(self.small_foliage, wind=0.7,
+                                         wind_pivot=0.02)
+        for _ in range(130):
             a, d = r.uniform(0, math.tau), r.uniform(5, 90)
             x, y = math.cos(a) * d, math.sin(a) * d
             if free(x, y, 4.0):
-                place(self.foliage, "flowers", (x, y, self.ground(x, y)),
+                place(self.small_foliage, "flowers", (x, y, self.ground(x, y)),
                       r.uniform(0, 360), r.uniform(0.7, 1.5))
 
         for _ in range(70):
@@ -194,14 +216,14 @@ class Props:
             x, y = px + math.cos(a) * d, py + math.sin(a) * d
             h = w.terrain.height_at(x, y)
             if cfg.water_level - 0.9 < h < cfg.water_level + 0.45:
-                place(self.foliage, "reed", (x, y, max(h, cfg.water_level - 0.25)),
+                place(self.small_foliage, "reed", (x, y, max(h, cfg.water_level - 0.25)),
                       r.uniform(0, 360), r.uniform(0.7, 1.3))
         for _ in range(16):
             a = r.uniform(0, math.tau)
             d = POND_RADIUS * r.uniform(0.1, 0.7)
             x, y = px + math.cos(a) * d, py + math.sin(a) * d
             if w.terrain.height_at(x, y) < cfg.water_level - 0.5:
-                place(self.foliage, "lilypad", (x, y, cfg.water_level + 0.03),
+                place(self.small_foliage, "lilypad", (x, y, cfg.water_level + 0.03),
                       r.uniform(0, 360), r.uniform(0.7, 1.2))
 
     def _place_animals(self):
@@ -209,24 +231,24 @@ class Props:
         for i in range(7):
             x = -19.0 + r.uniform(-6, 6)
             y = -16.0 + r.uniform(4, 10)
-            node = place(self.root, "chicken", (x, y, self.ground(x, y)),
+            node = place(self.dynamic, "chicken", (x, y, self.ground(x, y)),
                          r.uniform(0, 360), r.uniform(0.85, 1.15))
             self.animals.append(Wanderer(node, self.world, (x, y), 5.0, 0.75,
                                          bob=0.10, seed=i))
         for i in range(3):
             x = -26.0 + r.uniform(-5, 5)
             y = -4.0 + r.uniform(-6, 6)
-            node = place(self.root, "cow", (x, y, self.ground(x, y)),
+            node = place(self.dynamic, "cow", (x, y, self.ground(x, y)),
                          r.uniform(0, 360), r.uniform(0.92, 1.08))
             self.animals.append(Wanderer(node, self.world, (x, y), 8.0, 0.45,
                                          bob=0.05, seed=20 + i))
-        node = place(self.root, "cat", (14.0, -9.5, self.ground(14.0, -9.5)), 40)
+        node = place(self.dynamic, "cat", (14.0, -9.5, self.ground(14.0, -9.5)), 40)
         self.animals.append(Wanderer(node, self.world, (14.0, -9.5), 7.0, 0.9,
                                      bob=0.06, seed=40))
         for i in range(14):
             a, d = r.uniform(0, math.tau), r.uniform(4, 30)
             x, y = math.cos(a) * d, math.sin(a) * d
-            node = place(self.foliage, "butterfly", (x, y, self.ground(x, y) + 1.0),
+            node = place(self.dynamic, "butterfly", (x, y, self.ground(x, y) + 1.0),
                          r.uniform(0, 360), r.uniform(0.8, 1.4))
             self.animals.append(Flutterer(node, self.world, (x, y), seed=60 + i))
 

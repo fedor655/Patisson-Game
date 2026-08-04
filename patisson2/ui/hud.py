@@ -55,6 +55,8 @@ class HUD:
         self.panel_mode: str | None = None      # None | shop | journal | pause
         self.dialogue: tuple[str, str] | None = None
         self.shop_index = 0
+        self._last: dict[int, str] = {}
+        self._stamina_step = -1
 
         a2d = base.aspect2d
         self.root = a2d.attachNewNode("hud")
@@ -143,8 +145,8 @@ class HUD:
             self.root.hide()
 
     def set_prompt(self, text: str, tip: str = ""):
-        self.prompt.setText(text)
-        self.tooltip.setText(tip)
+        self._set(self.prompt, text)
+        self._set(self.tooltip, tip)
 
     def show_dialogue(self, name: str, line: str):
         self.dialogue = (name, line)
@@ -234,14 +236,19 @@ class HUD:
 
     # ---------------------------------------------------------------- update
 
+    def _set(self, node, value: str):
+        if self._last.get(id(node)) != value:
+            self._last[id(node)] = value
+            node.setText(value)
+
     def update(self, cycle, state, weather: str):
-        self.clock_text.setText(f"{cycle.clock_string()}   День {cycle.day + 1}")
-        self.season_text.setText(f"{cycle.season_name}")
-        self.weather_text.setText(weather)
-        self.coins_text.setText(f"{state.coins} мон.")
-        self.fish_text.setText(f"Рыба: {state.fish}")
+        self._set(self.clock_text, f"{cycle.clock_string()}   День {cycle.day + 1}")
+        self._set(self.season_text, cycle.season_name)
+        self._set(self.weather_text, weather)
+        self._set(self.coins_text, f"{state.coins} мон.")
+        self._set(self.fish_text, f"Рыба: {state.fish}")
         cap = state.upgrades.can_capacity
-        self.water_text.setText(f"Вода: {state.water:.0f}/{cap:.0f}")
+        self._set(self.water_text, f"Вода: {state.water:.0f}/{cap:.0f}")
 
         for i, key in enumerate(TOOLS):
             label = TOOL_NAMES[key]
@@ -250,7 +257,7 @@ class HUD:
                 have = state.count(f"seed_{state.seed_key}")
                 label = f"{crop.name} x{have}"
             selected = (i == state.tool_index)
-            self.tool_labels[i].setText(f"{i+1} {label}")
+            self._set(self.tool_labels[i], f"{i+1} {label}")
             self.tool_labels[i]["fg"] = GOLD if selected else DIM
             self.tool_slot_bg[i].setColor(
                 (0.30, 0.26, 0.08, 0.75) if selected else (0.05, 0.06, 0.07, 0.55))
@@ -258,12 +265,23 @@ class HUD:
         for i, slot in enumerate(self.notif):
             if i < len(state.notifications):
                 text, remaining = state.notifications[i]
-                slot.setText(text)
+                self._set(slot, text)
                 slot["fg"] = (1, 1, 1, min(1.0, remaining / 0.8))
             else:
-                slot.setText("")
+                self._set(slot, "")
 
+        if getattr(state, "photo_progress", None) is not None:
+            pct = int(state.photo_progress * 100)
+            self._set(self.tooltip,
+                      f"Фоторежим: трассировка лучей — {pct}%"
+                      if pct < 100 else "Фоторежим: готово")
+
+        # Assigning frameSize rebuilds the frame's geometry, so quantise it —
+        # a bar that redraws every frame costs more than the rest of the HUD.
         frac = max(0.0, min(1.0, state.stamina_frac))
-        self.stamina["frameSize"] = (0, 0.5 * frac, 0, 0.014)
-        self.stamina["frameColor"] = ((0.95, 0.55, 0.35, 0.8) if frac < 0.3
-                                      else (0.4, 0.9, 0.5, 0.75))
+        step = round(frac * 40)
+        if step != self._stamina_step:
+            self._stamina_step = step
+            self.stamina["frameSize"] = (0, 0.5 * step / 40.0, 0, 0.014)
+            self.stamina["frameColor"] = ((0.95, 0.55, 0.35, 0.8) if frac < 0.3
+                                          else (0.4, 0.9, 0.5, 0.75))

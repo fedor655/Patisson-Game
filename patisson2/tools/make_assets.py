@@ -566,7 +566,7 @@ def _branch(m: Mesh, start, direction, length, radius, depth, rng, colour, folia
     m.extend(tube([start, mid, end], [radius, radius * 0.75, radius * 0.55],
                   colour, 6 if depth < 2 else 5))
     if depth <= 0:
-        foliage.extend(sphere(length * 0.95, leaf_colour, 12, 8)
+        foliage.extend(sphere(length * 0.95, leaf_colour, 8, 5)
                        .scale(1.0, 1.0, 0.82)
                        .translate(*end))
         return
@@ -623,9 +623,9 @@ def make_tree(kind: str, seed: int):
 def make_bush(seed: int = 4):
     rng = _rng(seed)
     m = Mesh()
-    for _ in range(7):
-        r = rng.uniform(0.28, 0.48)
-        m.extend(sphere(r, FOLIAGE if rng.random() < 0.5 else FOLIAGE_2, 12, 8)
+    for _ in range(5):
+        r = rng.uniform(0.30, 0.50)
+        m.extend(sphere(r, FOLIAGE if rng.random() < 0.5 else FOLIAGE_2, 9, 6)
                  .scale(1.0, 1.0, 0.8)
                  .translate(rng.uniform(-0.35, 0.35), rng.uniform(-0.35, 0.35),
                             r * 0.75 + rng.uniform(0, 0.22)))
@@ -668,7 +668,7 @@ def make_reed():
 def make_flowers(seed: int = 2):
     rng = _rng(seed)
     m = Mesh()
-    for _ in range(9):
+    for _ in range(6):
         x, y = rng.uniform(-0.30, 0.30), rng.uniform(-0.30, 0.30)
         h = rng.uniform(0.16, 0.30)
         m.extend(tube([(x, y, 0), (x, y, h)], [0.006, 0.005], STEM, 5))

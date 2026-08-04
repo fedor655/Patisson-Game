@@ -470,7 +470,7 @@ class PatissonApp(ShowBase):
         p.cloud_cover = cover
         p.fog_tint = sky.fog_tint
         p.exposure_target = sky.exposure * (1.18 if self.weather == "rain" else 1.0)
-        self.render.setShaderInput("u_ambientScale", sky.ambient_scale)
+        p.set_ambient_scale(sky.ambient_scale)
 
         night = 1.0 if sky.is_night else max(0.0, 1.0 - sky.sun_dir.z * 8.0)
         if st.upgrades.lantern_oil:
@@ -479,7 +479,8 @@ class PatissonApp(ShowBase):
         wind = Vec4(0.82, 0.57, 0.0,
                     0.75 if self.weather in ("rain", "snow") else 0.42)
         self.world.update(dt, self.player.pos, wind, self.cycle.total_time)
-        self.world.apply_season(self.cycle.season)
+        if self.cycle.season != self.world.season:
+            self.world.apply_season(self.cycle.season)
         self.props.update(dt, self.cycle.total_time, night)
         self.villagers.update(dt if not blocked else 0.0, self.cycle.hour,
                               self.cycle.total_time)
@@ -498,6 +499,9 @@ class PatissonApp(ShowBase):
         tracer = getattr(self, "pathtracer", None)
         if self.photo_mode and tracer:
             tracer.step(self.player, sky)
+            st.photo_progress = tracer.progress
+        else:
+            st.photo_progress = None
 
         return task.cont
 

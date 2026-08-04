@@ -13,8 +13,8 @@ class GraphicsConfig:
     vsync: bool = True
     msaa: int = 0                 # post-AA handles edges; MSAA costs too much here
 
-    shadow_size: int = 4096
-    shadow_extent: float = 70.0   # half-width of the sun's ortho frustum, metres
+    shadow_size: int = 2048
+    shadow_extent: float = 48.0   # half-width of the sun's ortho frustum, metres
     shadow_bias: float = 0.0022
 
     ssao: bool = True
@@ -36,8 +36,8 @@ class GraphicsConfig:
     saturation: float = 1.06
     fog_density: float = 0.0016
 
-    grass_density: int = 420_000
-    grass_radius: float = 46.0
+    grass_density: int = 170_000
+    grass_radius: float = 38.0
     view_distance: float = 420.0
 
     # Path-traced photo mode.
@@ -53,11 +53,11 @@ class GraphicsConfig:
                            godrays=False, grass_density=40_000, grass_radius=28.0,
                            view_distance=260.0)
         if name == "medium":
-            return replace(base, shadow_size=2048, ssao=True, ssao_radius=0.6,
+            return replace(base, shadow_size=1024, ssao=True, ssao_radius=0.6,
                            grass_density=120_000, grass_radius=36.0)
         if name == "ultra":
             return replace(base, shadow_size=4096, ssao_radius=0.9,
-                           grass_density=700_000, grass_radius=58.0,
+                           grass_density=520_000, grass_radius=54.0,
                            view_distance=520.0, pt_samples_per_frame=3)
         return base
 

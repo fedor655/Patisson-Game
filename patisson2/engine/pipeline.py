@@ -23,6 +23,8 @@ from panda3d.core import (
     NodePath,
     OmniBoundingVolume,
     PointLight,
+    PTA_LVecBase3f,
+    PTA_float,
     Point2,
     Point3,
     SamplerState,
@@ -65,6 +67,9 @@ class RenderPipeline:
         self.fog_tint = Vec3(1.0, 1.0, 1.0)
         self.exposure_target = cfg.exposure
         self._exposure = cfg.exposure
+        self._sun_colour_key = None
+        self._sun_focus_key = None
+        self._size_key = None
 
         base.render.setShaderAuto(False)
         base.render.setAntialias(0)
@@ -74,6 +79,7 @@ class RenderPipeline:
         self._make_skylut()
         self._make_sky_dome()
         self._make_filter_chain()
+        self._make_global_inputs()
         self.apply_scene_shader(base.render)
         # Panda3D asserts on any declared uniform that has never been given a
         # value, so prime the whole chain before the first frame is drawn.
@@ -103,6 +109,7 @@ class RenderPipeline:
         lens.setNearFar(1.0, 480.0)
         self.base.render.setLight(self.sun_np)
 
+        self._light_state: dict[int, tuple] = {}
         self.point_lights = []
         for i in range(NUM_POINT_LIGHTS):
             pl = PointLight(f"point{i}")
@@ -264,6 +271,30 @@ class RenderPipeline:
             self.final_quad.setShader(make_shader("fullscreen.vert", "blit.frag"))
             self.final_quad.setShaderInput("u_source", self.ldr_tex)
 
+    def _make_global_inputs(self):
+        """Scene-wide uniforms live in arrays we mutate in place.
+
+        Calling setShaderInput on render every frame builds a new ShaderAttrib
+        and invalidates the cached render state of every node beneath it — with
+        a few hundred props that costs more CPU than drawing the frame. Binding
+        a PTA once and writing into it leaves the attrib untouched.
+        """
+        base = self.base
+        self.pta_sun_dir = PTA_LVecBase3f.emptyArray(1)
+        self.pta_camera = PTA_LVecBase3f.emptyArray(1)
+        self.pta_fog_tint = PTA_LVecBase3f.emptyArray(1)
+        self.pta_time = PTA_float.emptyArray(1)
+        self.pta_ambient = PTA_float.emptyArray(1)
+        self.pta_ambient[0] = 1.0
+        base.render.setShaderInput("u_sunDirWorld", self.pta_sun_dir)
+        base.render.setShaderInput("u_cameraWorld", self.pta_camera)
+        base.render.setShaderInput("u_fogTint", self.pta_fog_tint)
+        base.render.setShaderInput("u_time", self.pta_time)
+        base.render.setShaderInput("u_ambientScale", self.pta_ambient)
+
+    def set_ambient_scale(self, value: float):
+        self.pta_ambient[0] = value
+
     # ------------------------------------------------------------- materials
 
     def apply_scene_shader(self, np_: NodePath, *, wind: float = 0.0,
@@ -284,17 +315,20 @@ class RenderPipeline:
         np_.setShaderInput("u_shadowWorldTexel",
                            self.cfg.shadow_extent * 2.0 / self.cfg.shadow_size)
         np_.setShaderInput("u_shadowBias", self.cfg.shadow_bias)
-        np_.setShaderInput("u_ambientScale", 1.0)
         np_.setShaderInput("u_fogDensity", self.cfg.fog_density)
-        np_.setShaderInput("u_fogTint", self.fog_tint)
-        np_.setShaderInput("u_sunDirWorld", self.sun_dir)
-        np_.setShaderInput("u_cameraWorld", Vec3(0, 0, 0))
-        np_.setShaderInput("u_time", 0.0)
         if not albedo_map:
             np_.setShaderInput("p3d_Texture0", self.white_tex)
 
     def set_point_light(self, index: int, pos, color, attenuation=(1.0, 0.09, 0.045)):
+        # Touching a Light rebuilds the LightAttrib and invalidates cached state
+        # for the whole scene, so only write when something actually moved.
         np_ = self.point_lights[index]
+        key = (round(pos[0], 2), round(pos[1], 2), round(pos[2], 2),
+               round(color[0], 3), round(color[1], 3), round(color[2], 3),
+               attenuation)
+        if self._light_state.get(index) == key:
+            return
+        self._light_state[index] = key
         np_.setPos(*pos)
         np_.node().setColor(Vec4(*color, 1.0))
         np_.node().setAttenuation(Vec3(*attenuation))
@@ -318,6 +352,12 @@ class RenderPipeline:
                          local.y,
                          round(local.z / texel) * texel)
         world = light_mat.xformPoint(snapped)
+        key = (round(world[0], 3), round(world[1], 3), round(world[2], 3),
+               round(self.light_dir[0], 4), round(self.light_dir[1], 4),
+               round(self.light_dir[2], 4))
+        if key == self._sun_focus_key:
+            return
+        self._sun_focus_key = key
         self.sun_np.setPos(Vec3(world) + self.light_dir * dist)
         self.sun_np.lookAt(Vec3(world))
 
@@ -326,7 +366,11 @@ class RenderPipeline:
         base = self.base
 
         self._snap_sun(focus if focus is not None else cam_pos)
-        self.sun.setColor(Vec4(*self.sun_color, 1.0))
+        colour_key = (round(self.sun_color[0], 3), round(self.sun_color[1], 3),
+                      round(self.sun_color[2], 3))
+        if colour_key != self._sun_colour_key:
+            self._sun_colour_key = colour_key
+            self.sun.setColor(Vec4(*self.sun_color, 1.0))
 
         # Sky table.
         self.skylut_quad.setShaderInput("u_sunDirWorld", self.sun_dir)
@@ -339,10 +383,14 @@ class RenderPipeline:
         self.sky.setShaderInput("u_time", self.time)
         self.sky.setShaderInput("u_cloudCover", self.cloud_cover)
 
-        base.render.setShaderInput("u_sunDirWorld", self.light_dir)
-        base.render.setShaderInput("u_cameraWorld", cam_pos)
-        base.render.setShaderInput("u_time", self.time)
-        base.render.setShaderInput("u_fogTint", self.fog_tint)
+        self.pta_sun_dir[0] = self.light_dir
+        self.pta_camera[0] = cam_pos
+        self.pta_fog_tint[0] = self.fog_tint
+        self.pta_time[0] = self.time
+
+        size_key = (base.win.getXSize(), base.win.getYSize())
+        resized = size_key != self._size_key
+        self._size_key = size_key
 
         if self.ao_quad is not None:
             lens = base.camLens
@@ -351,13 +399,14 @@ class RenderPipeline:
             self.ao_quad.setShaderInput("u_proj", proj)
             self.ao_quad.setShaderInput("u_invProj", inv_proj)
             self.ao_quad.setShaderInput("u_time", self.time)
-            w, h = max(base.win.getXSize(), 1), max(base.win.getYSize(), 1)
-            self.ao_quad.setShaderInput("u_texel", Vec3(2.0 / w, 2.0 / h, 0.0).xy)
-            self.ao_blur_h.setShaderInput("u_direction", Vec3(2.0 / w, 0.0, 0.0).xy)
-            self.ao_blur_v.setShaderInput("u_direction", Vec3(0.0, 2.0 / h, 0.0).xy)
+            if resized:
+                w, h = max(size_key[0], 1), max(size_key[1], 1)
+                self.ao_quad.setShaderInput("u_texel", Vec3(2.0 / w, 2.0 / h, 0.0).xy)
+                self.ao_blur_h.setShaderInput("u_direction", Vec3(2.0 / w, 0.0, 0.0).xy)
+                self.ao_blur_v.setShaderInput("u_direction", Vec3(0.0, 2.0 / h, 0.0).xy)
 
-        w, h = max(base.win.getXSize(), 1), max(base.win.getYSize(), 1)
-        if self.bloom_levels:
+        w, h = max(size_key[0], 1), max(size_key[1], 1)
+        if self.bloom_levels and resized:
             self.bloom_pre.setShaderInput("u_texel", Vec3(1.0 / w, 1.0 / h, 0).xy)
             for (hq, _ht, vq, _vt, div) in self.bloom_levels:
                 hq.setShaderInput("u_direction", Vec3(float(div) / w, 0.0, 0.0).xy)
@@ -372,7 +421,7 @@ class RenderPipeline:
         self.composite.setShaderInput("u_sunScreenPos", sun_uv)
         self.composite.setShaderInput("u_sunVisibility", visible)
 
-        if self.cfg.fxaa:
+        if self.cfg.fxaa and resized:
             self.final_quad.setShaderInput("u_texel", Vec3(1.0 / w, 1.0 / h, 0).xy)
 
     def _sun_screen_pos(self):

@@ -111,6 +111,7 @@ class GameState:
         self.play_time = 0.0
         # Mirrored from the player each frame so the HUD needs only state.
         self.stamina_frac = 1.0
+        self.photo_progress = None
 
     # ------------------------------------------------------------ inventory
 

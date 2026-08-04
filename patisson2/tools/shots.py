@@ -160,6 +160,22 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     look_at(app.player, (-4.0, 10.0, 0.5), (6.0, -10.0, gz(6.0, -10.0)))
     shot("15-winter.png", hour=12.0)
 
+    # 12. Photo mode: the same view, path traced.
+    app.world.apply_season(1)
+    app.weather = "clear"
+    app.cycle.total_time = 10.5 / 24.0 * cfg.game.day_length
+    look_at(app.player, (7.5, 7.0, 1.2), (2.0, -3.0, gz(2.0, -3.0)))
+    settle(4)
+    app.toggle_photo_mode()
+    tracer = getattr(app, "pathtracer", None)
+    if tracer:
+        while tracer.samples < 320:
+            app.taskMgr.step()
+        shot("16-pathtraced.png")
+        app.toggle_photo_mode()
+    else:
+        print("[shot] 16-pathtraced.png skipped (no compute support)", flush=True)
+
     print("done ->", out_dir, flush=True)
     sys.stdout.flush()
     os._exit(0)
