@@ -213,6 +213,30 @@ class HUD:
             self.panel_hint.setText(
                 f"Монет: {self.state.coins}    "
                 "↑/↓ выбор   Enter купить   F продать всё   Esc выход")
+        elif self.panel_mode == "kitchen":
+            from ..game.cooking import RECIPES, item_name
+            kitchen = self.base.kitchen
+            self.panel_title.setText("Котёл")
+            lines = []
+            for i, r in enumerate(RECIPES):
+                cursor = ">" if i == kitchen.index else " "
+                parts = "  ".join(f"{item_name(k)} x{v}" for k, v in r.inputs.items())
+                have = self.state.count(r.key)
+                stock = f"   (в сумке: {have})" if have else ""
+                lines.append(f"{cursor} {r.name:<22} {r.sell_price:>4} мон.{stock}")
+                lines.append(f"    {parts}")
+                if i == kitchen.index:
+                    missing = kitchen.missing(r)
+                    if missing:
+                        short = ", ".join(f"{item_name(k)} x{v}"
+                                          for k, v in missing.items())
+                        lines.append(f"    не хватает: {short}")
+                    else:
+                        lines.append(f"    можно готовить  ·  +{r.stamina:.0f} сил")
+                lines.append("")
+            self.panel_body.setText("\n".join(lines))
+            self.panel_hint.setText(
+                "↑/↓ выбор   Enter приготовить   F съесть   K или Esc выход")
         elif self.panel_mode == "journal":
             self.panel_title.setText("Журнал")
             lines = ["ЗАДАНИЯ", ""]
@@ -242,7 +266,8 @@ class HUD:
                      "  WASD — движение,  Shift — бег,  Space — прыжок",
                      "  ЛКМ / E — действие инструментом",
                      "  1..5 — инструменты,  Q/колесо — выбор семян",
-                     "  T — магазин,  J — журнал,  F5 — сохранить,  F9 — загрузить",
+                     "  T — магазин,  K — котёл,  J — журнал",
+                     "  F5 — сохранить,  F9 — загрузить",
                      "  P — фотореж. (трассировка лучей),  F1 — интерфейс",
                      "  M — звук вкл/выкл,  - / = — громкость",
                      "  F — продать всё у прилавка,  Esc — пауза",

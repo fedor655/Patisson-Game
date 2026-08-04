@@ -18,7 +18,9 @@ from panda3d.core import (
 from .audio.manager import AudioManager
 from .config import Config
 from .engine.pipeline import RenderPipeline
+from .game.cooking import POT_POSITION, Kitchen, item_name
 from .game.farming import CROPS, CROP_ORDER, Farm
+from .game.livestock import FEED_ITEM, SPECIES, Livestock
 from .game.npc import Villagers
 from .game.player import Player
 from .game.state import GameState, SHOP_ITEMS, load_game, save_game
@@ -76,6 +78,8 @@ class PatissonApp(ShowBase):
         self.farm = Farm(self, self.world, self.props, self.cfg.game.day_length)
         self.villagers = Villagers(self, self.world, self.props)
         self.precip = Precipitation(self, self.world, self.pipeline)
+        self.livestock = Livestock(self, self.world, self.props,
+                                   self.cfg.game.day_length)
         self.cycle = DayNightCycle(self.cfg.game.day_length,
                                    self.cfg.game.start_hour,
                                    self.cfg.game.season_days)
@@ -83,6 +87,7 @@ class PatissonApp(ShowBase):
         self.state.stamina_frac = 1.0
         self.player = Player(self, self.world, self.cfg.game, start=(2.0, -9.0))
         self.hud = HUD(self, self.state, self.cfg)
+        self.kitchen = Kitchen(self.state)
         self.audio = AudioManager(self) if audio else None
         if self.audio:
             self.state.sound = self.audio.play
@@ -111,12 +116,15 @@ class PatissonApp(ShowBase):
         binds = {
             "w": "forward", "s": "back", "a": "left", "d": "right",
             "space": "jump", "shift": "sprint",
-            "arrow_up": "forward", "arrow_down": "back",
             "arrow_left": "left", "arrow_right": "right",
         }
         for key, action in binds.items():
             self.accept(key, self._set_key, [action, True])
             self.accept(f"{key}-up", self._set_key, [action, False])
+        # Up/down double as list navigation while a panel owns the screen.
+        for key, action in (("arrow_up", "forward"), ("arrow_down", "back")):
+            self.accept(key, self._on_arrow, [action, True])
+            self.accept(f"{key}-up", self._on_arrow, [action, False])
 
         self.accept("escape", self.on_escape)
         self.accept("e", self.on_interact)
@@ -135,12 +143,27 @@ class PatissonApp(ShowBase):
         self.accept("minus", self.nudge_volume, [-0.1])
         self.accept("=", self.nudge_volume, [0.1])
         self.accept("m", self.toggle_mute)
+        self.accept("k", self.toggle_kitchen)
         self.accept("enter", self.on_confirm)
         for i in range(1, 6):
             self.accept(str(i), self.select_tool, [i - 1])
 
     def _set_key(self, action, value):
         self.keys[action] = value
+
+    def _on_arrow(self, action, value):
+        if value and self.hud.panel_mode in ("shop", "kitchen"):
+            self.panel_cursor(-1 if action == "forward" else 1)
+            return
+        self.keys[action] = value
+
+    def panel_cursor(self, delta: int):
+        if self.hud.panel_mode == "shop":
+            self.hud.move_shop_cursor(delta)
+        elif self.hud.panel_mode == "kitchen":
+            self.kitchen.move(delta)
+            self.hud.refresh_panel()
+        self.sound("click", 0.35)
 
     def _grab_mouse(self, grab: bool):
         self.mouse_grabbed = grab and not self.offscreen
@@ -189,7 +212,8 @@ class PatissonApp(ShowBase):
 
     def menu_continue(self):
         self.sound("click", 0.6)
-        if load_game(self.state, self.farm, self.cycle, self.player):
+        if load_game(self.state, self.farm, self.cycle, self.player,
+                     livestock=self.livestock):
             self._enter_world()
             self.state.notify("Игра загружена")
         else:
@@ -249,8 +273,8 @@ class PatissonApp(ShowBase):
         self.state.tool_index = max(0, min(len(TOOLS) - 1, index))
 
     def on_wheel(self, delta: int):
-        if self.hud.panel_mode == "shop":
-            self.hud.move_shop_cursor(delta)
+        if self.hud.panel_mode in ("shop", "kitchen"):
+            self.panel_cursor(delta)
         else:
             self.state.cycle_seed(delta)
 
@@ -297,7 +321,53 @@ class PatissonApp(ShowBase):
             self.paused = True
             self._grab_mouse(False)
 
+    def toggle_kitchen(self):
+        if self.mode == "menu":
+            return
+        if self.hud.panel_mode == "kitchen":
+            self.hud.close_panel()
+            self.paused = False
+            self._grab_mouse(True)
+        elif self.hud.panel_mode is None and self._near_pot():
+            self.sound("click", 0.5)
+            self.hud.open_panel("kitchen")
+            self.paused = True
+            self._grab_mouse(False)
+        elif self.hud.panel_mode is None:
+            self.sound("error", 0.5)
+            self.state.notify("Котёл стоит у дома")
+
+    def on_cook(self):
+        """Enter in the kitchen cooks; F eats what is selected."""
+        recipe = self.kitchen.cook()
+        if recipe is None:
+            self.sound("error", 0.6)
+            missing = self.kitchen.missing()
+            short = ", ".join(f"{item_name(k)} x{v}" for k, v in missing.items())
+            self.state.notify(f"Не хватает: {short}")
+        else:
+            self.sound("harvest", 0.8)
+            self.state.notify(f"Приготовлено: {recipe.name}")
+            self.state.unlock("first_dish")
+            self.state.record("cook", recipe.key)
+            if len(self.state.cooked) >= 5:
+                self.state.unlock("chef")
+        self.hud.refresh_panel()
+
+    def on_eat(self):
+        recipe = self.kitchen.eat(self.player)
+        if recipe is None:
+            self.sound("error", 0.6)
+            self.state.notify("Этого блюда нет в сумке")
+        else:
+            self.sound("water", 0.5)
+            self.state.notify(f"Съедено: {recipe.name} (+{recipe.stamina:.0f} сил)")
+        self.hud.refresh_panel()
+
     def on_confirm(self):
+        if self.hud.panel_mode == "kitchen":
+            self.on_cook()
+            return
         if self.hud.panel_mode == "shop":
             before = self.state.coins
             self.state.buy(self.hud.shop_key)
@@ -305,16 +375,21 @@ class PatissonApp(ShowBase):
             self.hud.refresh_panel()
 
     def on_save(self):
-        path = save_game(self.state, self.farm, self.cycle, self.player)
+        path = save_game(self.state, self.farm, self.cycle, self.player,
+                         livestock=self.livestock)
         self.state.notify(f"Сохранено: {path.name}")
 
     def on_load(self):
-        if load_game(self.state, self.farm, self.cycle, self.player):
+        if load_game(self.state, self.farm, self.cycle, self.player,
+                     livestock=self.livestock):
             self.state.notify("Игра загружена")
         else:
             self.state.notify("Сохранение не найдено")
 
     def on_sell(self):
+        if self.hud.panel_mode == "kitchen":
+            self.on_eat()
+            return
         if self._near_stall():
             self.sound("coin" if self.state.sell_all() else "error", 0.9)
         else:
@@ -351,6 +426,10 @@ class PatissonApp(ShowBase):
         sx, sy, _h = LAYOUT["market_stall"]
         return (self.player.pos.x - sx) ** 2 + (self.player.pos.y - sy) ** 2 < 16.0
 
+    def _near_pot(self) -> bool:
+        px, py = POT_POSITION
+        return (self.player.pos.x - px) ** 2 + (self.player.pos.y - py) ** 2 < 20.0
+
     def _near_well(self) -> bool:
         from .world.props import LAYOUT
         wx, wy, _h = LAYOUT["well"]
@@ -376,6 +455,21 @@ class PatissonApp(ShowBase):
         npc = self.villagers.nearest(self.player.pos, 2.8)
         if npc is not None:
             return f"[E] Поговорить — {npc.name}", npc.activity
+        if self._near_pot():
+            return "[K] Готовить у котла", "Блюда дороже, чем сырьё"
+        animal, animal_state = self.livestock.nearest(self.player.pos)
+        if animal_state is not None:
+            kind = "курица" if animal_state.kind == "chicken" else "корова"
+            if animal_state.ready:
+                product = SPECIES[animal_state.kind][0]
+                return f"[E] Забрать: {item_name(product)}", kind
+            cost = SPECIES[animal_state.kind][2]
+            if animal_state.hungry:
+                if st.count(FEED_ITEM) >= cost:
+                    return f"[E] Покормить ({item_name(FEED_ITEM)} x{cost})", kind
+                return "", f"{kind} голодна — нужна пшеница x{cost}"
+            pct = animal_state.progress * 100.0
+            return "", f"{kind}: сыта, готово на {pct:.0f}%"
         if self.fishing:
             phase = self.fishing[0]
             if phase == "bite":
@@ -427,6 +521,30 @@ class PatissonApp(ShowBase):
         if npc is not None:
             self.sound("click", 0.5)
             self.hud.show_dialogue(npc.name, npc.talk())
+            return
+
+        if self._near_pot():
+            self.toggle_kitchen()
+            return
+
+        animal, animal_state = self.livestock.nearest(self.player.pos)
+        if animal_state is not None:
+            if animal_state.ready:
+                product = self.livestock.collect(animal_state)
+                st.give(product, 1)
+                st.record("collect", product)
+                self.sound("cluck" if animal_state.kind == "chicken" else "moo", 0.7)
+                st.notify(f"Собрано: {item_name(product)}")
+            elif animal_state.hungry:
+                if self.livestock.feed(animal_state, st):
+                    self.sound("plant", 0.7)
+                    st.unlock("farmhand")
+                    st.notify("Накормлено")
+                else:
+                    self.sound("error", 0.6)
+                    st.notify(f"Нужна пшеница x{SPECIES[animal_state.kind][2]}")
+            else:
+                self.sound("click", 0.4)
             return
 
         if self.fishing:
@@ -583,6 +701,7 @@ class PatissonApp(ShowBase):
             self._update_weather(dt)
             self._update_fishing(dt)
             events = self.farm.update(dt, self.cycle.season, self.weather == "rain")
+            self.livestock.update(dt)
             for e in events:
                 st.notify(e)
 

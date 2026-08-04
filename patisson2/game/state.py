@@ -75,6 +75,14 @@ def default_quests() -> list[Quest]:
               "Накопите 400 монет.", 400, 120, "coins"),
         Quest("harvest_master", "Хозяин фермы",
               "Соберите 6 патиссонов.", 6, 200, "harvest", "patisson"),
+        Quest("poultry", "Птичница",
+              "Соберите 5 яиц.", 5, 70, "collect", "egg"),
+        Quest("dairy", "Молочница",
+              "Соберите 3 ведра молока.", 3, 90, "collect", "milk"),
+        Quest("cook", "Повар",
+              "Приготовьте 3 блюда.", 3, 130, "cook", "*"),
+        Quest("baker", "Кондитер",
+              "Испеките тыквенный пирог.", 1, 260, "cook", "pie"),
     ]
 
 
@@ -87,6 +95,9 @@ ACHIEVEMENTS = {
     "night_owl": "Полночь на ферме",
     "all_crops": "Выращены все пять культур",
     "green_thumb": "10 растущих грядок сразу",
+    "first_dish": "Первое блюдо у котла",
+    "chef": "Приготовить все пять блюд",
+    "farmhand": "Накормить животное",
 }
 
 
@@ -114,6 +125,8 @@ class GameState:
         self.photo_progress = None
         # Set by the app so unlocks and quests can play their fanfare.
         self.sound = None
+        # recipe key -> times cooked, for quests and achievements
+        self.cooked: dict[str, int] = {}
 
     # ------------------------------------------------------------ inventory
 
@@ -178,11 +191,17 @@ class GameState:
         return False
 
     def sell_all(self) -> int:
+        # Imported here: cooking pulls in the world package, and state is
+        # imported long before that is ready.
+        from .cooking import DISH_PRICE, item_price
+        from .livestock import PRODUCT_PRICE
+
+        sellable = set(CROPS) | set(PRODUCT_PRICE) | set(DISH_PRICE)
         total = 0
         for key in list(self.inventory):
-            if key in CROPS:
+            if key in sellable:
                 n = self.inventory.pop(key)
-                total += CROPS[key].sell_price * n
+                total += item_price(key) * n
         if self.fish:
             total += self.fish * FISH_PRICE
             self.fish = 0
@@ -202,7 +221,8 @@ class GameState:
         for q in self.quests:
             if q.done or q.kind != kind:
                 continue
-            if q.kind == "harvest" and q.target not in ("*", target):
+            if q.kind in ("harvest", "collect", "cook") \
+                    and q.target not in ("*", target):
                 continue
             q.progress += amount
             if q.progress >= q.goal:
@@ -243,6 +263,7 @@ class GameState:
             "upgrades": vars(self.upgrades),
             "achievements": sorted(self.achievements),
             "play_time": self.play_time,
+            "cooked": self.cooked,
             "quests": [
                 {"key": q.key, "progress": q.progress, "done": q.done,
                  "claimed": q.claimed}
@@ -261,6 +282,7 @@ class GameState:
                 setattr(self.upgrades, k, bool(v))
         self.achievements = set(data.get("achievements", []))
         self.play_time = data.get("play_time", 0.0)
+        self.cooked = dict(data.get("cooked", {}))
         by_key = {q.key: q for q in self.quests}
         for qd in data.get("quests", []):
             q = by_key.get(qd["key"])
@@ -270,11 +292,13 @@ class GameState:
                 q.claimed = qd.get("claimed", False)
 
 
-def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH) -> Path:
+def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
+              livestock=None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     blob = {
         "state": state.to_dict(),
         "farm": farm.to_dict(),
+        "livestock": livestock.to_dict() if livestock else {},
         "clock": {"total_time": cycle.total_time},
         "player": {"x": player.pos.x, "y": player.pos.y,
                    "heading": player.heading, "pitch": player.pitch},
@@ -283,7 +307,8 @@ def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH) -> 
     return path
 
 
-def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH) -> bool:
+def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
+              livestock=None) -> bool:
     if not path.exists():
         return False
     try:
@@ -292,6 +317,8 @@ def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH) -> 
         return False
     state.from_dict(blob.get("state", {}))
     farm.from_dict(blob.get("farm", {}))
+    if livestock is not None:
+        livestock.from_dict(blob.get("livestock", {}))
     cycle.total_time = blob.get("clock", {}).get("total_time", cycle.total_time)
     p = blob.get("player", {})
     if p:

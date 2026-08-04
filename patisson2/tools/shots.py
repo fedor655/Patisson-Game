@@ -153,12 +153,29 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     shot("13-shop.png", hour=13.0, weather="clear")
     app.hud.close_panel()
 
+    # Kitchen: stock the bag so the recipe list shows real availability.
+    from ..game.cooking import POT_POSITION
+    for key, n in (("wheat", 5), ("egg", 3), ("milk", 2), ("pumpkin", 1),
+                   ("patisson", 2), ("tomato", 1), ("carrot", 2)):
+        st.give(key, n)
+    st.fish = 3
+    px, py = POT_POSITION
+    app.player.pos.x, app.player.pos.y = px, py
+    app.player.pos.z = gz(px, py)
+    # Stand off to the side so the hearth, not the house wall, is the backdrop.
+    look_at(app.player, (px, py, 0.5), (px - 3.4, py + 2.6, gz(px - 3.4, py + 2.6)))
+    shot("14-hearth.png", hour=13.0)
+    app.kitchen.index = 4
+    app.hud.open_panel("kitchen")
+    shot("15-kitchen.png", hour=13.0)
+    app.hud.close_panel()
+
     app.hud.open_panel("journal")
     st.record("harvest", "patisson", 3)
     st.unlock("first_seed")
     st.unlock("first_harvest")
     app.hud.refresh_panel()
-    shot("14-journal.png")
+    shot("16-journal.png")
     app.hud.close_panel()
 
     # 11. Autumn, then winter. The clock has to move so the game loop agrees
@@ -167,11 +184,11 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     season_len = day * cfg.game.season_days
     app.cycle.total_time += season_len * 2
     look_at(app.player, (-3.0, 13.0, 1.0), (11.0, -15.0, gz(11.0, -15.0) + 3.0))
-    shot("15-autumn.png", hour=16.0, weather="clear")
+    shot("17-autumn.png", hour=16.0, weather="clear")
 
     app.cycle.total_time += season_len
     look_at(app.player, (-4.0, 10.0, 0.5), (6.0, -10.0, gz(6.0, -10.0)))
-    shot("16-winter.png", hour=12.0, weather="snow")
+    shot("18-winter.png", hour=12.0, weather="snow")
 
     # 12. Photo mode: the same view, path traced.
     app.cycle.total_time = day * 8 + 10.5 / 24.0 * day     # back to summer
@@ -183,10 +200,10 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     if tracer:
         while tracer.samples < 320:
             app.taskMgr.step()
-        shot("17-pathtraced.png")
+        shot("19-pathtraced.png")
         app.toggle_photo_mode()
     else:
-        print("[shot] 17-pathtraced.png skipped (no compute support)", flush=True)
+        print("[shot] 19-pathtraced.png skipped (no compute support)", flush=True)
 
     print("done ->", out_dir, flush=True)
     sys.stdout.flush()

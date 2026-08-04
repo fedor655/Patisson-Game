@@ -50,6 +50,7 @@ LAYOUT = {
     "market_stall": (-13.0, -2.0, 108.0),
     "signpost": (2.0, -8.5, 24.0),
     "scarecrow": (-4.5, 12.0, 200.0),
+    "cooking_pot": (13.4, -8.4, 30.0),
 }
 
 # The tilled plots the player starts with: (x, y).

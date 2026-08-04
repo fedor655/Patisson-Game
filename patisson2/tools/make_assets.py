@@ -497,6 +497,48 @@ def make_scarecrow():
             Part(straw, "straw", roughness=0.9, double_sided=True)]
 
 
+def make_cooking_pot():
+    """A cauldron on a stone hearth — the farm's kitchen."""
+    stone = Mesh()
+    metal = Mesh()
+    fire = Mesh()
+    r = _rng(77)
+    # Ring of hearth stones.
+    for i in range(11):
+        a = math.radians(360 * i / 11 + r.uniform(-8, 8))
+        sz = 0.15 + r.uniform(0, 0.07)
+        stone.extend(box(sz, sz * 0.8, sz * 0.75, STONE_DARK, origin="base")
+                     .rotate_z(math.degrees(a))
+                     .translate(math.cos(a) * 0.46, math.sin(a) * 0.46, 0.0))
+    stone.extend(revolve([(0.44, 0.0), (0.46, 0.06)], 14, STONE))
+    # Cauldron.
+    body = revolve([(0.001, 0.30), (0.20, 0.32), (0.27, 0.46), (0.26, 0.62),
+                    (0.22, 0.68)], 16, IRON).smooth(55)
+    metal.extend(body)
+    metal.extend(revolve([(0.275, 0.60), (0.275, 0.665)], 16, srgb(96, 98, 104),
+                         close_bottom=False, close_top=False))
+    # Tripod legs and a hanging bar.
+    for i in range(3):
+        a = math.radians(120 * i + 30)
+        metal.extend(tube([(math.cos(a) * 0.40, math.sin(a) * 0.40, 0.0),
+                           (math.cos(a) * 0.16, math.sin(a) * 0.16, 0.30)],
+                          [0.022, 0.018], IRON, 6))
+    metal.extend(tube([(-0.27, 0, 0.64), (-0.30, 0, 0.78), (0.0, 0, 0.84),
+                       (0.30, 0, 0.78), (0.27, 0, 0.64)],
+                      [0.016] * 5, IRON, 6))
+    # Embers under the pot, emissive so they glow at night.
+    for i in range(7):
+        a = r.uniform(0, 360)
+        d = r.uniform(0.0, 0.22)
+        fire.extend(box(0.09, 0.05, 0.035, srgb(226, 108, 40), origin="base")
+                    .rotate_z(a)
+                    .translate(math.cos(math.radians(a)) * d,
+                               math.sin(math.radians(a)) * d, 0.03))
+    return [Part(stone, "hearth", roughness=0.94),
+            Part(metal, "cauldron", roughness=0.46, metallic=0.72),
+            Part(fire, "embers", roughness=0.7, emissive=(1.0, 0.42, 0.12))]
+
+
 def make_crate():
     m = Mesh()
     m.extend(box(0.60, 0.60, 0.48, WOOD_LIGHT, origin="base"))
@@ -880,6 +922,7 @@ MODELS = {
     "fence": make_fence,
     "signpost": make_signpost,
     "scarecrow": make_scarecrow,
+    "cooking_pot": make_cooking_pot,
     "crate": make_crate,
     "barrel": make_barrel,
     "bucket": make_bucket,
