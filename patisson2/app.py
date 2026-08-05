@@ -73,15 +73,18 @@ def configure(cfg: Config, offscreen: bool = False):
 
 class PatissonApp(ShowBase):
     def __init__(self, cfg: Config | None = None, offscreen: bool = False,
-                 audio: bool = True, use_settings: bool = True):
+                 audio: bool = True, use_settings: bool = True,
+                 preset: str | None = None):
         self.cfg = cfg or Config()
         # Stored choices decide the expensive settings before anything is
         # built, so the first frame is already what the player asked for.
         # Screenshot captures pass use_settings=False: whatever the machine
         # happens to have saved must not change what the pictures look like.
-        self.settings = (user_settings.load() if use_settings
-                         else user_settings.apply_preset(
-                             dict(user_settings.DEFAULTS), "high"))
+        # A preset named on the command line beats both — see settings.resolve.
+        stored = (user_settings.load() if use_settings
+                  else user_settings.apply_preset(
+                      dict(user_settings.DEFAULTS), "high"))
+        self.settings = user_settings.resolve(stored, preset)
         user_settings.apply_to_config(self.cfg, self.settings)
         self._persist_settings = use_settings
         self.bindings = Bindings(self.settings.get("keys"))
@@ -1373,16 +1376,16 @@ class PatissonApp(ShowBase):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     cfg = Config()
-    if "--low" in argv:
-        cfg.graphics = type(cfg.graphics).preset("low")
-    elif "--ultra" in argv:
-        cfg.graphics = type(cfg.graphics).preset("ultra")
-    elif "--medium" in argv:
-        cfg.graphics = type(cfg.graphics).preset("medium")
+    preset = None
+    for name in ("low", "medium", "high", "ultra"):
+        if f"--{name}" in argv:
+            preset = name
+    if preset:
+        cfg.graphics = type(cfg.graphics).preset(preset)
     if "--fullscreen" in argv:
         cfg.graphics.fullscreen = True
     configure(cfg)
-    app = PatissonApp(cfg)
+    app = PatissonApp(cfg, preset=preset)
     app.run()
 
 

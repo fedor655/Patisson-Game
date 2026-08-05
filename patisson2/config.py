@@ -47,17 +47,22 @@ class GraphicsConfig:
 
     @staticmethod
     def preset(name: str) -> "GraphicsConfig":
+        """The parts of a preset that have no entry in the settings file.
+
+        Shadow size, SSAO, bloom, god rays and the grass count all belong to
+        settings.PRESETS, which the options screen writes and the app applies
+        after this — setting them here as well only produced two answers to
+        the same question, and the settings file always won.
+        """
         base = GraphicsConfig()
         if name == "low":
-            return replace(base, shadow_size=1024, ssao=False, bloom=True,
-                           godrays=False, grass_density=40_000, grass_radius=28.0,
-                           view_distance=260.0)
+            return replace(base, ssao_radius=0.5, grass_radius=28.0,
+                           view_distance=260.0, pt_samples_per_frame=1)
         if name == "medium":
-            return replace(base, shadow_size=1024, ssao=True, ssao_radius=0.6,
-                           grass_density=120_000, grass_radius=36.0)
+            return replace(base, ssao_radius=0.6, grass_radius=36.0,
+                           view_distance=360.0)
         if name == "ultra":
-            return replace(base, shadow_size=4096, ssao_radius=0.9,
-                           grass_density=520_000, grass_radius=54.0,
+            return replace(base, ssao_radius=0.9, grass_radius=54.0,
                            view_distance=520.0, pt_samples_per_frame=3)
         return base
 

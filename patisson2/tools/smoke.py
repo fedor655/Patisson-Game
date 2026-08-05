@@ -180,6 +180,35 @@ def run() -> int:
                                        app.travel_to_selected()))
     check("настройки", lambda: (app.toggle_options(), app.options.change(1),
                                 app.close_options()))
+
+    def presets():
+        """A preset flag must beat the settings file, and applying settings
+        twice must give the same answer as applying them once."""
+        from .. import settings as us
+        from ..config import Config, GraphicsConfig
+
+        on_disk = us.apply_preset(dict(us.DEFAULTS), "high")
+        for name, ssao, godrays, shadow in (("low", False, False, 1024),
+                                            ("medium", True, False, 2048),
+                                            ("ultra", True, True, 4096)):
+            cfg = Config()
+            cfg.graphics = GraphicsConfig.preset(name)
+            chosen = us.resolve(on_disk, name)
+            us.apply_to_config(cfg, chosen)
+            g = cfg.graphics
+            assert g.ssao is ssao, f"--{name}: ssao {g.ssao}, ждали {ssao}"
+            assert g.godrays is godrays, f"--{name}: лучи {g.godrays}"
+            assert g.shadow_size == shadow, f"--{name}: тени {g.shadow_size}"
+            assert on_disk["preset"] == "high", "resolve испортил файл настроек"
+
+        cfg = Config()
+        data = us.apply_preset(dict(us.DEFAULTS), "low")
+        us.apply_to_config(cfg, data)
+        once = cfg.graphics.grass_density
+        us.apply_to_config(cfg, data)
+        assert cfg.graphics.grass_density == once, (
+            f"настройки не идемпотентны: {once} -> {cfg.graphics.grass_density}")
+    check("пресеты качества", presets)
     check("переназначение", lambda: (app.rebind("interact", "r"),
                                      app.reset_bindings()))
     check("пауза", lambda: (app.on_escape(), app.taskMgr.step(), app.on_escape()))

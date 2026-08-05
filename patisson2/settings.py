@@ -67,6 +67,18 @@ def apply_preset(data: dict, preset: str) -> dict:
     return data
 
 
+def resolve(stored: dict, preset: str | None) -> dict:
+    """The settings the game should start from.
+
+    A preset named on the command line wins over the file. It used to lose:
+    main() built a Config from the preset and the app then overwrote it with
+    whatever was on disk, so `--low` ran with SSAO, god rays and 2048-pixel
+    shadows all switched on and only the grass thinned out.
+    """
+    data = dict(stored)
+    return apply_preset(data, preset) if preset else data
+
+
 def matching_preset(data: dict) -> str:
     """Which preset these values correspond to, or 'custom'."""
     for name, values in PRESETS.items():
@@ -76,10 +88,18 @@ def matching_preset(data: dict) -> str:
 
 
 def apply_to_config(cfg, data: dict) -> None:
-    """Fold the stored choices into a Config before anything is built."""
+    """Fold the stored choices into a Config before anything is built.
+
+    Idempotent on purpose. This used to scale ``grass_density`` in place, so
+    calling it twice with the same settings quartered the grass — the scale is
+    against the default, not against whatever the field happens to hold.
+    """
+    from .config import GraphicsConfig
+
     g = cfg.graphics
     g.shadow_size = int(data["shadow_size"])
     g.ssao = bool(data["ssao"])
     g.bloom = bool(data["bloom"])
     g.godrays = bool(data["godrays"])
-    g.grass_density = max(1000, int(g.grass_density * float(data["grass_scale"])))
+    base = GraphicsConfig.grass_density
+    g.grass_density = max(1000, int(base * float(data["grass_scale"])))
