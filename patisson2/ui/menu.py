@@ -100,7 +100,7 @@ class MainMenu:
         has_save = SAVE_PATH.exists()
         self._button(0, "  Играть", self.app.menu_new_game)
         self._button(1, "  Продолжить", self.app.menu_continue, enabled=has_save)
-        self._button(2, "  Настройки", lambda: self._build_settings())
+        self._button(2, "  Настройки", self.app.toggle_options)
         self._button(3, "  Достижения", lambda: self._build_achievements())
         self._button(4, "  Выход", self.app.userExit)
         self.info.setText("" if has_save else "Сохранения пока нет — начните новую игру.")

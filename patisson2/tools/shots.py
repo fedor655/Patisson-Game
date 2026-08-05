@@ -39,7 +39,7 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     cfg.graphics.vsync = False
     configure(cfg, offscreen=True)
 
-    app = PatissonApp(cfg, offscreen=True, audio=False)
+    app = PatissonApp(cfg, offscreen=True, audio=False, use_settings=False)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def settle(frames=6):
@@ -246,6 +246,12 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     app.hud.open_panel("kitchen")
     shot("16-kitchen.png", hour=13.0)
     app.hud.close_panel()
+
+    app.toggle_options()
+    settle(3)
+    shot("17c-options.png", hour=10.0)
+    app.close_options()
+    settle(2)
 
     app.toggle_map()
     app.worldmap.move(6)          # put the cursor on the pond

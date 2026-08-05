@@ -16,6 +16,7 @@ from panda3d.core import (
 )
 
 from .audio.manager import AudioManager
+from . import settings as user_settings
 from .config import Config
 from .engine.pipeline import RenderPipeline
 from .game.cooking import POT_POSITION, Kitchen, item_name
@@ -29,6 +30,7 @@ from .game.state import GameState, load_game, save_game, shop_entries
 from .game.tutorial import Tutorial
 from .ui.hud import HUD
 from .ui.menu import MainMenu
+from .ui.options import OptionsScreen
 from .ui.worldmap import WorldMap
 from .world.daynight import DayNightCycle
 from .world.props import Props, plot_positions
@@ -63,8 +65,17 @@ def configure(cfg: Config, offscreen: bool = False):
 
 class PatissonApp(ShowBase):
     def __init__(self, cfg: Config | None = None, offscreen: bool = False,
-                 audio: bool = True):
+                 audio: bool = True, use_settings: bool = True):
         self.cfg = cfg or Config()
+        # Stored choices decide the expensive settings before anything is
+        # built, so the first frame is already what the player asked for.
+        # Screenshot captures pass use_settings=False: whatever the machine
+        # happens to have saved must not change what the pictures look like.
+        self.settings = (user_settings.load() if use_settings
+                         else user_settings.apply_preset(
+                             dict(user_settings.DEFAULTS), "high"))
+        user_settings.apply_to_config(self.cfg, self.settings)
+        self._persist_settings = use_settings
         super().__init__()
         self.offscreen = offscreen
         self.disableMouse()
@@ -110,12 +121,14 @@ class PatissonApp(ShowBase):
         self.fishing = Fishing(random.Random(self.cfg.world.seed ^ 0xF15))
         self.photo_mode = False
         self.worldmap = WorldMap(self, self.hud, self.world, self.cfg.world)
+        self.options = OptionsScreen(self, self.hud)
         self.tutorial = Tutorial()
         self._walked = 0.0
         self.mode = "menu"             # menu | playing
         self.menu = MainMenu(self, self.hud)
         self._setup_input()
 
+        self.apply_settings()
         self.taskMgr.add(self.update, "game-update")
         self.open_main_menu()
 
@@ -125,8 +138,11 @@ class PatissonApp(ShowBase):
         binds = {
             "w": "forward", "s": "back", "a": "left", "d": "right",
             "space": "jump", "shift": "sprint",
-            "arrow_left": "left", "arrow_right": "right",
         }
+        # Left/right double as value adjustment on the settings screen.
+        for key, delta in (("arrow_left", -1), ("arrow_right", 1)):
+            self.accept(key, self._on_side_arrow, [delta, True])
+            self.accept(f"{key}-up", self._on_side_arrow, [delta, False])
         for key, action in binds.items():
             self.accept(key, self._set_key, [action, True])
             self.accept(f"{key}-up", self._set_key, [action, False])
@@ -154,14 +170,25 @@ class PatissonApp(ShowBase):
         self.accept("m", self.toggle_mute)
         self.accept("k", self.toggle_kitchen)
         self.accept("tab", self.toggle_map)
+        self.accept("o", self.toggle_options)
         self.accept("enter", self.on_confirm)
         for i in range(1, 6):
             self.accept(str(i), self.select_tool, [i - 1])
+
+    def _on_side_arrow(self, delta, value):
+        if value and self.options.visible:
+            self.options.change(delta)
+            return
+        self.keys["right" if delta > 0 else "left"] = value
 
     def _set_key(self, action, value):
         self.keys[action] = value
 
     def _on_arrow(self, action, value):
+        if value and self.options.visible:
+            self.options.move(-1 if action == "forward" else 1)
+            self.sound("click", 0.3)
+            return
         if value and self.worldmap.visible:
             self.worldmap.move(-1 if action == "forward" else 1)
             self.sound("click", 0.35)
@@ -285,6 +312,59 @@ class PatissonApp(ShowBase):
             self.state.notify("Звук включён", 1.6)
         self.hud.refresh_panel()
 
+    def apply_settings(self) -> None:
+        """Push the stored choices at the live pipeline and mixer."""
+        d = self.settings
+        g = self.cfg.graphics
+        pipe = self.pipeline
+
+        size = int(d["shadow_size"])
+        if size != g.shadow_size:
+            g.shadow_size = size
+            pipe.sun.setShadowCaster(True, size, size, -3000)
+            pipe.set_shadow_size(size)
+
+        g.ssao = bool(d["ssao"])
+        g.bloom = bool(d["bloom"])
+        g.godrays = bool(d["godrays"])
+        pipe.set_ssao(g.ssao)
+        pipe.composite.setShaderInput(
+            "u_bloomStrength", g.bloom_strength if g.bloom else 0.0)
+        pipe.composite.setShaderInput(
+            "u_godrayStrength", g.godray_strength if g.godrays else 0.0)
+
+        count = max(1000, int(Config().graphics.grass_density * float(d["grass_scale"])))
+        if getattr(self, "world", None) is not None:
+            self.world.grass_np.setInstanceCount(count)
+
+        if self.audio:
+            self.audio.set_volumes(master=d["master_volume"],
+                                   music=d["music_volume"],
+                                   sfx=d["sfx_volume"])
+
+    def toggle_options(self):
+        if self.options.visible:
+            self.close_options()
+            return
+        self.sound("click", 0.5)
+        self.hud.close_panel()
+        self.worldmap.close()
+        self.hud.root.hide()
+        self.options.open()
+        self._grab_mouse(False)
+
+    def close_options(self):
+        self.sound("click", 0.45)
+        self.options.close()
+        if self._persist_settings:
+            user_settings.save(self.settings)
+        if self.mode == "menu":
+            self.menu.show()
+        else:
+            if self.hud.visible:
+                self.hud.root.show()
+            self._grab_mouse(not self.paused)
+
     def toggle_map(self):
         if self.mode == "menu" or self.hud.panel_mode:
             return
@@ -353,6 +433,9 @@ class PatissonApp(ShowBase):
             self.state.cycle_seed(delta)
 
     def on_escape(self):
+        if self.options.visible:
+            self.close_options()
+            return
         self.sound("click", 0.45)
         if self.worldmap.visible:
             self.worldmap.close()
@@ -903,6 +986,7 @@ class PatissonApp(ShowBase):
 
         in_menu = self.mode == "menu"
         blocked = (in_menu or self.paused or self.worldmap.visible
+                   or self.options.visible
                    or self.hud.panel_mode is not None)
         if not blocked:
             self.cycle.advance(dt)

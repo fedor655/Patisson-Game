@@ -77,6 +77,9 @@ class RenderPipeline:
         base.render.setShaderAuto(False)
         base.render.setAntialias(0)
 
+        # Every node given the scene shader carries its own copy of the
+        # shadow uniforms, so changing the map size has to revisit them.
+        self._shaded_nodes: list[NodePath] = []
         self._make_default_textures()
         self._make_lights()
         self._make_skylut()
@@ -200,21 +203,27 @@ class RenderPipeline:
             quad.setShaderInput("u_intensity", cfg.ssao_intensity)
             quad.setShaderInput("u_bias", 0.022)
             self.ao_quad = quad
+            # Keep the buffer itself so the pass can be switched off outright
+            # rather than merely rendered and ignored.
+            self.ao_buffers = [self.manager.buffers[-1]]
 
             self.ao_blur_tex = Texture("ao-blur")
             b1 = self.manager.renderQuadInto("ao-blur-h", colortex=self.ao_blur_tex, div=2)
             b1.setShader(make_shader("fullscreen.vert", "blur.frag"))
             b1.setShaderInput("u_source", self.ao_tex)
             self.ao_blur_h = b1
+            self.ao_buffers.append(self.manager.buffers[-1])
 
             self.ao_final = Texture("ao-final")
             b2 = self.manager.renderQuadInto("ao-blur-v", colortex=self.ao_final, div=2)
             b2.setShader(make_shader("fullscreen.vert", "blur.frag"))
             b2.setShaderInput("u_source", self.ao_blur_tex)
             self.ao_blur_v = b2
+            self.ao_buffers.append(self.manager.buffers[-1])
         else:
             self.ao_final = self.white_tex
             self.ao_quad = None
+            self.ao_buffers = []
 
         # --- bloom --------------------------------------------------------
         self.bloom_levels = []
@@ -332,6 +341,7 @@ class RenderPipeline:
         np_.setShaderInput("u_alphaCutoff", alpha_cutoff)
         np_.setShaderInput("u_hasAlbedoMap", 1.0 if albedo_map else 0.0)
         np_.setShaderInput("u_microDetail", micro_detail)
+        self._shaded_nodes.append(np_)
         np_.setShaderInput("u_shadowTexel", 1.0 / self.cfg.shadow_size)
         np_.setShaderInput("u_shadowWorldTexel",
                            self.cfg.shadow_extent * 2.0 / self.cfg.shadow_size)
@@ -339,6 +349,24 @@ class RenderPipeline:
         np_.setShaderInput("u_fogDensity", self.cfg.fog_density)
         if not albedo_map:
             np_.setShaderInput("p3d_Texture0", self.white_tex)
+
+    def set_ssao(self, enabled: bool) -> None:
+        """Turn the occlusion pass on or off, buffer and all."""
+        self.cfg.ssao = enabled
+        for buff in getattr(self, "ao_buffers", ()):
+            buff.setActive(enabled)
+        self.composite.setShaderInput("u_aoStrength", 1.0 if enabled else 0.0)
+
+    def set_shadow_size(self, size: int) -> None:
+        """Re-point every shader at a shadow map that changed resolution."""
+        self.cfg.shadow_size = size
+        texel = 1.0 / size
+        world_texel = self.cfg.shadow_extent * 2.0 / size
+        for np_ in self._shaded_nodes:
+            if np_.isEmpty():
+                continue
+            np_.setShaderInput("u_shadowTexel", texel)
+            np_.setShaderInput("u_shadowWorldTexel", world_texel)
 
     def set_point_light(self, index: int, pos, color, attenuation=(1.0, 0.09, 0.045)):
         # Touching a Light rebuilds the LightAttrib and invalidates cached state

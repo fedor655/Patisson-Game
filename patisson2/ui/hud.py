@@ -219,6 +219,7 @@ class HUD:
         app = self.base
         entries = [
             ("Продолжить", app.on_escape),
+            ("Настройки", app.toggle_options),
             ("Пропустить обучение", app.skip_tutorial),
             ("Сохранить", app.on_save),
             ("В главное меню", app.open_main_menu),
@@ -227,11 +228,11 @@ class HUD:
         for i, (label, cmd) in enumerate(entries):
             b = DirectButton(
                 parent=self.panel, text=label, text_font=self.font,
-                text_fg=INK, text_scale=0.036, text_pos=(0, -0.012),
+                text_fg=INK, text_scale=0.031, text_pos=(0, -0.010),
                 frameColor=((0.12, 0.14, 0.12, 0.9), (0.26, 0.32, 0.18, 0.95),
                             (0.34, 0.42, 0.22, 1.0), (0.1, 0.1, 0.1, 0.6)),
-                frameSize=(-0.172, 0.172, -0.042, 0.052), relief=1,
-                pos=(-0.86 + i * 0.36, 0, -0.615), command=cmd)
+                frameSize=(-0.143, 0.143, -0.042, 0.052), relief=1,
+                pos=(-0.90 + i * 0.30, 0, -0.615), command=cmd)
             b.setTransparency(TransparencyAttrib.MAlpha)
             self.panel_buttons.append(b)
 
