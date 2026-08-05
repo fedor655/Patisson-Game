@@ -234,6 +234,12 @@ class PatissonApp(ShowBase):
         if value and self.options.visible:
             self.options.change(delta)
             return
+        if value and self.hud.panel_mode == "journal":
+            from .ui.hud import JOURNAL_PAGES
+            self.hud.journal_page = (self.hud.journal_page + delta) % len(JOURNAL_PAGES)
+            self.hud.refresh_panel()
+            self.sound("click", 0.35)
+            return
         self.keys["right" if delta > 0 else "left"] = value
 
     def _on_pad_button(self, action: str):
@@ -714,11 +720,8 @@ class PatissonApp(ShowBase):
         self.state.notify(f"Сохранено: {path.name}")
 
     def on_load(self):
-        if load_game(self.state, self.farm, self.cycle, self.player,
-                     livestock=self.livestock, pests=self.pests,
-                     tutorial=self.tutorial):
-            self.state.notify("Игра загружена")
-        else:
+        # Read back the slot F5 writes to, not the pre-slot save file.
+        if not self.load_slot(self.save_slot):
             self.state.notify("Сохранение не найдено")
 
     def on_sell(self):

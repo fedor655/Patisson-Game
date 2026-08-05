@@ -288,8 +288,17 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     st.record("harvest", "patisson", 3)
     st.unlock("first_seed")
     st.unlock("first_harvest")
+    st.add_fish("roach", 0.4)
+    st.add_fish("pike", 3.1)
     app.hud.refresh_panel()
     shot("17-journal.png")
+    app.hud.journal_page = 1               # the almanac
+    app.hud.refresh_panel()
+    shot("17a-almanac.png")
+    app.hud.journal_page = 2               # statistics
+    app.hud.refresh_panel()
+    shot("17aa-stats.png")
+    app.hud.journal_page = 0
     app.hud.close_panel()
 
     # 11. Autumn, then winter. The clock has to move so the game loop agrees

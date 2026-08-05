@@ -166,7 +166,8 @@ class MainMenu:
         self._button(0, "  Назад", lambda: (self.app.sound("click", 0.5),
                                             self._build_root()))
         got = self.app.state.achievements
-        lines = [f"{'✔' if k in got else '·'}  {v}" for k, v in ACHIEVEMENTS.items()]
+        from .hud import MARK
+        lines = [f"{MARK if k in got else '·'}  {v}" for k, v in ACHIEVEMENTS.items()]
         self.info.setText(f"Открыто {len(got)} из {len(ACHIEVEMENTS)}\n\n"
                           + "\n".join(lines))
 

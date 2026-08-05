@@ -287,6 +287,8 @@ class GameState:
         self.cooked: dict[str, int] = {}
         # species key -> (count, total kilos), for value and the journal
         self.fish_log: dict[str, list] = {}
+        self.total_earned = 0
+        self.best_fish: tuple[str, float] | None = None
 
     # ------------------------------------------------------------ inventory
 
@@ -305,6 +307,8 @@ class GameState:
         return self.inventory.get(key, 0)
 
     def add_fish(self, species_key: str, kilos: float) -> None:
+        if self.best_fish is None or kilos > self.best_fish[1]:
+            self.best_fish = (species_key, kilos)
         entry = self.fish_log.setdefault(species_key, [0, 0.0])
         entry[0] += 1
         entry[1] += kilos
@@ -397,6 +401,7 @@ class GameState:
         from .livestock import PRODUCT_PRICE
 
         sellable = set(CROPS) | set(PRODUCT_PRICE) | set(DISH_PRICE)
+        mult = self.upgrades.sell_multiplier
         total = 0
         for key in list(self.inventory):
             if key in sellable:
@@ -416,6 +421,7 @@ class GameState:
         total = int(round(total * mult))
         if total:
             self.coins += total
+            self.total_earned += total
             self.notify(f"Продано на {total} монет")
             if self.coins >= 1000:
                 self.unlock("rich")
@@ -474,6 +480,8 @@ class GameState:
             "play_time": self.play_time,
             "cooked": self.cooked,
             "fish_log": self.fish_log,
+            "total_earned": self.total_earned,
+            "best_fish": list(self.best_fish) if self.best_fish else None,
             "quests": [
                 {"key": q.key, "progress": q.progress, "done": q.done,
                  "claimed": q.claimed}
@@ -506,6 +514,9 @@ class GameState:
         self.play_time = data.get("play_time", 0.0)
         self.cooked = dict(data.get("cooked", {}))
         self.fish_log = {k: list(v) for k, v in data.get("fish_log", {}).items()}
+        self.total_earned = int(data.get("total_earned", 0))
+        best = data.get("best_fish")
+        self.best_fish = (best[0], float(best[1])) if best else None
         by_key = {q.key: q for q in self.quests}
         for qd in data.get("quests", []):
             q = by_key.get(qd["key"])

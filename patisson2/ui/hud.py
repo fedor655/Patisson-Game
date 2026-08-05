@@ -11,6 +11,12 @@ from panda3d.core import CardMaker, NodePath, TextNode, TransparencyAttrib, Vec4
 from ..game.farming import CROPS, CROP_ORDER
 from ..game.state import (ACHIEVEMENTS, TOOL_NAMES, TOOLS, shop_entries)
 
+JOURNAL_PAGES = ("задания", "справочник", "статистика")
+
+# A tick mark would read better, but the fonts we fall back to below do not all
+# carry U+2714 — Segoe UI renders it as an empty box. "x" is always there.
+MARK = "x"
+
 # Panda's built-in font has no Cyrillic; fall back through the usual suspects.
 FONT_CANDIDATES = [
     "C:/Windows/Fonts/segoeui.ttf",
@@ -55,6 +61,7 @@ class HUD:
         self.panel_mode: str | None = None      # None | shop | journal | pause
         self.dialogue: tuple[str, str] | None = None
         self.shop_index = 0
+        self.journal_page = 0
         self._last: dict[int, str] = {}
         self._stamina_step = -1
         self._tool_index = -1
@@ -158,6 +165,11 @@ class HUD:
         self.panel_body = OnscreenText(text="", pos=(-0.95, 0.44), scale=0.047,
                                        fg=INK, font=self.font, mayChange=True,
                                        align=TextNode.ALeft, parent=self.panel)
+        # Second column, used by the journal; hidden for every other panel.
+        self.panel_body2 = OnscreenText(text="", pos=(0.02, 0.44), scale=0.047,
+                                        fg=INK, font=self.font, mayChange=True,
+                                        align=TextNode.ALeft, parent=self.panel)
+        self.panel_body2.hide()
         self.panel_hint = OnscreenText(text="", pos=(0, -0.64), scale=0.040,
                                        fg=DIM, font=self.font, mayChange=True,
                                        align=TextNode.ACenter, parent=self.panel)
@@ -213,6 +225,79 @@ class HUD:
             b.destroy()
         self.panel_buttons.clear()
 
+    # Every journal page is two columns: nine quests plus eighteen achievements
+    # do not fit down one, and neither do five crops plus seven fish.
+
+    def _journal_quests(self):
+        left = ["ЗАДАНИЯ", ""]
+        for q in self.state.quests:
+            mark = MARK if q.done else " "
+            left.append(f" [{mark}] {q.title}  ({min(q.progress, q.goal)}/{q.goal})")
+            left.append(f"      {q.detail}")
+        right = ["ДОСТИЖЕНИЯ", ""]
+        for key, desc in ACHIEVEMENTS.items():
+            mark = MARK if key in self.state.achievements else " "
+            right.append(f" [{mark}] {desc}")
+        return left, right
+
+    def _journal_almanac(self):
+        """What grows when, and what bites when — the data the game already has."""
+        from ..game.fishing import SPECIES
+        from ..world.daynight import SEASONS
+        left = ["КУЛЬТУРЫ", ""]
+        for key in CROP_ORDER:
+            crop = CROPS[key]
+            seasons = ", ".join(SEASONS[s] for s in crop.seasons) or "круглый год"
+            left.append(f"  {crop.name} · {crop.sell_price} мон.")
+            left.append(f"      {seasons} · растёт {crop.grow_days:.0f} дн.")
+            left.append(f"      урожай {crop.yield_count} · семена {crop.seed_price} мон.")
+            left.append("")
+        right = ["РЫБА", ""]
+        for sp in SPECIES:
+            if sp.key == "boot":
+                continue
+            if sp.hours:
+                when = f"клюёт {sp.hours[0]:.0f}:00–{sp.hours[1]:.0f}:00"
+            else:
+                when = "клюёт в любое время"
+            seasons = ", ".join(SEASONS[s] for s in sp.seasons) or "круглый год"
+            mark = MARK if self.state.fish_log.get(sp.key) else " "
+            right.append(f" [{mark}] {sp.name} — {sp.price} мон./кг")
+            right.append(f"      {sp.size[0]:.1f}–{sp.size[1]:.1f} кг · {seasons}")
+            right.append(f"      {when} · подсечек {sp.pulls}")
+        return left, right
+
+    def _journal_stats(self):
+        """Labels and values as separate columns: this font is not monospaced,
+        so padding with spaces would not line the numbers up."""
+        from ..game.fishing import BY_KEY
+        st = self.state
+        cycle = self.base.cycle
+        rows = [
+            ("День", f"{cycle.day + 1} ({cycle.season_name})"),
+            ("За игрой", f"{int(st.play_time // 60)} мин"),
+            ("Монет сейчас", f"{st.coins}"),
+            ("Заработано всего", f"{st.total_earned}"),
+            ("", ""),
+            ("Собрано урожая", f"{sum(self.base.farm.harvest_log.values())}"),
+            ("Приготовлено блюд", f"{sum(st.cooked.values())}"),
+            ("Поймано рыбы", "{} ({:.1f} кг)".format(
+                sum(c for c, _k in st.fish_log.values()),
+                sum(k for _c, k in st.fish_log.values()))),
+        ]
+        if st.best_fish:
+            key, size = st.best_fish
+            name = BY_KEY[key].name if key in BY_KEY else key
+            rows.append(("Лучший улов", f"{name}, {size:.1f} кг"))
+        rows.append(("", ""))
+        rows.append(("Достижений",
+                     f"{len(st.achievements)} из {len(ACHIEVEMENTS)}"))
+        rows.append(("Заданий выполнено",
+                     f"{sum(1 for q in st.quests if q.done)} из {len(st.quests)}"))
+        left = ["СТАТИСТИКА", ""] + [f"  {label}:" if label else "" for label, _ in rows]
+        right = ["", ""] + [value for _, value in rows]
+        return left, right
+
     def _build_pause_buttons(self):
         """Pause needs a way out that is not just Esc."""
         from direct.gui.DirectGui import DirectButton
@@ -237,6 +322,11 @@ class HUD:
             self.panel_buttons.append(b)
 
     def refresh_panel(self):
+        # Every panel shares these two text nodes, and the journal resizes them,
+        # so put them back to the default before rebuilding anything.
+        self.panel_body.setScale(0.047)
+        self.panel_body.setPos(-0.95, 0.44)
+        self.panel_body2.hide()
         if self.panel_mode == "shop":
             self.panel_title.setText("Лавка")
             lines = []
@@ -278,30 +368,22 @@ class HUD:
             self.panel_hint.setText(
                 "↑/↓ выбор   Enter приготовить   F съесть   K или Esc выход")
         elif self.panel_mode == "journal":
-            self.panel_title.setText("Журнал")
-            lines = ["ЗАДАНИЯ", ""]
-            for q in self.state.quests:
-                mark = "✔" if q.done else " "
-                lines.append(f" [{mark}] {q.title}  ({min(q.progress, q.goal)}/{q.goal})")
-                lines.append(f"      {q.detail}")
-            from ..game.fishing import SPECIES
-            caught = self.state.fish_log
-            if caught:
-                lines += ["", "УЛОВ", ""]
-                for sp in SPECIES:
-                    entry = caught.get(sp.key)
-                    if not entry:
-                        continue
-                    count, kilos = entry
-                    biggest = kilos / max(count, 1)
-                    lines.append(f"  {sp.name}: {count} шт, {kilos:.1f} кг "
-                                 f"(в среднем {biggest:.1f})")
-            lines += ["", "ДОСТИЖЕНИЯ", ""]
-            for key, desc in ACHIEVEMENTS.items():
-                mark = "✔" if key in self.state.achievements else " "
-                lines.append(f" [{mark}] {desc}")
-            self.panel_body.setText("\n".join(lines))
-            self.panel_hint.setText("J или Esc — закрыть")
+            page = JOURNAL_PAGES[self.journal_page]
+            self.panel_title.setText(f"Журнал — {page}")
+            builder = (self._journal_quests, self._journal_almanac,
+                       self._journal_stats)[self.journal_page]
+            left, right = builder()
+            stats = self.journal_page == 2
+            scale = 0.045 if stats else 0.036   # statistics is a short page
+            split = -0.30 if stats else 0.04
+            self.panel_body.setScale(scale)
+            self.panel_body.setPos(-0.95, 0.50)
+            self.panel_body.setText("\n".join(left))
+            self.panel_body2.setScale(scale)
+            self.panel_body2.setPos(split, 0.50)
+            self.panel_body2.setText("\n".join(right))
+            self.panel_body2.show()
+            self.panel_hint.setText("←→ — раздел · J или Esc — закрыть")
         elif self.panel_mode == "pause":
             self.panel_title.setText("Пауза")
             inv = []
