@@ -103,6 +103,25 @@ def run() -> int:
         app.livestock.collect(state)
     check("живность", livestock_round)
 
+    # --- villagers --------------------------------------------------------
+    def dialogue_round():
+        from ..game.dialogue import GREETINGS, TOPICS
+        npc = app.villagers.npcs[0]
+        assert npc.talk(app.talk_context()) == GREETINGS[npc.key], "нет знакомства"
+        # Every topic must have a line for every villager, or a context that
+        # only fits one of them would leave the others with nothing to say.
+        for topic in TOPICS:
+            for other in app.villagers.npcs:
+                assert topic.lines.get(other.key), f"{topic.name}: нет {other.key}"
+        seen = set()
+        for other in app.villagers.npcs:
+            for _ in range(40):
+                line = other.talk(app.talk_context())
+                assert line and not line.endswith("«»"), f"пустая реплика: {line}"
+                seen.add(line)
+        assert len(seen) > 12, f"слишком однообразно: {len(seen)}"
+    check("разговоры", dialogue_round)
+
     # --- soundscape -------------------------------------------------------
     def soundscape_round():
         scape = app.soundscape

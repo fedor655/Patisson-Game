@@ -527,7 +527,8 @@ class GameState:
 
 
 def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None, pests=None, tutorial=None, slot=None) -> Path:
+              livestock=None, pests=None, tutorial=None, slot=None,
+              villagers=None) -> Path:
     if slot is not None:
         path = slot_path(slot)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -539,6 +540,7 @@ def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
         "farm": farm.to_dict(),
         "livestock": livestock.to_dict() if livestock else {},
         "pests": pests.to_dict() if pests else {},
+        "villagers": villagers.to_dict() if villagers else {},
         "tutorial": tutorial.to_dict() if tutorial else {},
         "clock": {"total_time": cycle.total_time},
         "player": {"x": player.pos.x, "y": player.pos.y,
@@ -553,7 +555,8 @@ def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
 
 
 def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None, pests=None, tutorial=None, slot=None) -> bool:
+              livestock=None, pests=None, tutorial=None, slot=None,
+              villagers=None) -> bool:
     if slot is not None:
         path = slot_path(slot)
     if not path.exists():
@@ -568,6 +571,8 @@ def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
         livestock.from_dict(blob.get("livestock", {}))
     if pests is not None:
         pests.from_dict(blob.get("pests", {}))
+    if villagers is not None:
+        villagers.from_dict(blob.get("villagers", {}))
     if tutorial is not None:
         tutorial.from_dict(blob.get("tutorial", {}))
     cycle.total_time = blob.get("clock", {}).get("total_time", cycle.total_time)

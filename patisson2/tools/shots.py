@@ -220,6 +220,19 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     st.fish = 6
     shot("09-market.png", hour=14.0)
 
+    # The same villager, talking. Force the context so the line is about the
+    # ripe harvest standing in the beds rather than whatever the clock says.
+    for plot in app.farm.plots[:3]:
+        plot.crop, plot.progress, plot.tilled = "patisson", 1.0, True
+    seller.met = True
+    seller.recent.clear()
+    app.hud.show_dialogue(seller.name, "Урожай поспел — неси, куплю всё.")
+    settle(3)
+    shot("09b-talk.png", hour=14.0)
+    app.hud.hide_dialogue()
+    for plot in app.farm.plots[:3]:
+        plot.crop, plot.progress = None, 0.0
+
     # 8. Wide shot of the whole farm from the hillside.
     hx, hy = 34.0, -34.0
     look_at(app.player, (-6.0, 6.0, 0.0), (hx, hy, gz(hx, hy) + 7.0))

@@ -21,6 +21,7 @@ from .input import ACTIONS, Bindings, Gamepad, PAD_BUTTONS
 from .config import Config
 from .engine.pipeline import RenderPipeline
 from .game.cooking import POT_POSITION, Kitchen, item_name
+from .game.dialogue import Talk
 from .game.farming import CROPS, CROP_ORDER, Farm
 from .game.fishing import BITE, IDLE, REELING, WAITING, Fishing
 from .game.livestock import FEED_ITEM, SPECIES, Livestock
@@ -384,7 +385,8 @@ class PatissonApp(ShowBase):
             return False
         ok = load_game(self.state, self.farm, self.cycle, self.player,
                        livestock=self.livestock, pests=self.pests,
-                       tutorial=self.tutorial, slot=slot)
+                       tutorial=self.tutorial, slot=slot,
+                       villagers=self.villagers)
         if ok:
             from .game.state import slot_label
             self.state.notify(f"Загружено: {slot_label(slot)}")
@@ -706,7 +708,8 @@ class PatissonApp(ShowBase):
     def write_save(self, slot):
         return save_game(self.state, self.farm, self.cycle, self.player,
                          livestock=self.livestock, pests=self.pests,
-                         tutorial=self.tutorial, slot=slot)
+                         tutorial=self.tutorial, slot=slot,
+                         villagers=self.villagers)
 
     def autosave(self, reason: str = ""):
         """Quiet, frequent, and always to its own slot — never over a manual one."""
@@ -917,7 +920,7 @@ class PatissonApp(ShowBase):
         npc = self.villagers.nearest(self.player.pos, 2.8)
         if npc is not None:
             self.sound("click", 0.5)
-            self.hud.show_dialogue(npc.name, npc.talk())
+            self.hud.show_dialogue(npc.name, npc.talk(self.talk_context()))
             return
 
         if self._near_pot():
@@ -1271,6 +1274,28 @@ class PatissonApp(ShowBase):
             st.photo_progress = None
 
         return task.cont
+
+    def talk_context(self):
+        """Snapshot of the world for the villagers to react to."""
+        st = self.state
+        plots = self.farm.plots
+        unfinished = [q for q in st.quests if not q.done]
+        return Talk(
+            hour=self.cycle.hour,
+            season=self.cycle.season,
+            day=self.cycle.day,
+            weather=self.weather,
+            coins=st.coins,
+            crows=sum(1 for c in self.pests.crows if c.phase != "leaving"),
+            ripe=sum(1 for p in plots if p.ripe),
+            weedy=sum(1 for p in plots if p.weedy),
+            sick=sum(1 for p in plots if p.sick),
+            planted=sum(1 for p in plots if p.crop is not None),
+            tilled=sum(1 for p in plots if p.tilled),
+            fish=sum(c for c, _k in st.fish_log.values()),
+            quest=unfinished[0].title if unfinished else None,
+            quests_left=len(unfinished),
+        )
 
     def _crow_caw(self, pos):
         if self.audio:

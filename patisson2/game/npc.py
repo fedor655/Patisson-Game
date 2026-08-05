@@ -33,28 +33,6 @@ SCHEDULES = {
     ],
 }
 
-DIALOGUE = {
-    "bogdan": [
-        "Вот и дождались! Ферма снова живая.",
-        "Патиссон любит воду. Не забывай поливать.",
-        "Колодец у дома — набирай сколько нужно.",
-        "Осенью тыква идёт лучше всего. Проверено.",
-        "В игре могут быть баги. Веселись!",
-    ],
-    "marina": [
-        "Свежая рыба! Ну, почти свежая.",
-        "Продавай урожай у прилавка — я хорошо плачу.",
-        "Золотая лейка дорогая, но воду носить перестанешь.",
-        "Ночью на ферме красиво. И тихо.",
-    ],
-    "pyotr": [
-        "Куры опять разбежались. Как всегда.",
-        "Дождь будет — грядки польются сами.",
-        "Земля тут добрая, если за ней ходить.",
-        "Зимой ничего не растёт. Отдыхай.",
-    ],
-}
-
 NAMES = {"bogdan": "Богдан", "marina": "Марина", "pyotr": "Пётр"}
 
 # Somewhere with a roof, in order of preference per villager.
@@ -71,15 +49,9 @@ def _shelters():
 
 SHELTERS = _shelters()
 
-# Lines they use while it is coming down.
-WET_LINES = {
-    "bogdan": ["Ну и льёт. Грядки хоть поливать не надо.",
-               "Пересидим — и снова за работу."],
-    "marina": ["Под навесом хоть сухо. Товар не мокнет.",
-               "В такую погоду рыба берёт хорошо, между прочим."],
-    "pyotr": ["Куры под крышей, и я с ними.",
-              "Дождь — он земле в радость, а мне в тягость."],
-}
+# What they actually say lives in game/dialogue.py, which knows about the
+# season, the weather and the state of your beds. This file only knows where
+# they stand.
 
 
 # Rig dimensions, mirrored from tools/make_assets.py.
@@ -100,7 +72,8 @@ class NPC:
         self.world = world
         self.schedule = SCHEDULES[key]
         self.rng = random.Random(seed)
-        self.line_index = self.rng.randrange(len(DIALOGUE[key]))
+        self.met = False
+        self.recent: list[str] = []
         self.activity = self.schedule[0][2]
         self.speed = 1.9
         self.target = Vec3(*self.schedule[0][1], 0)
@@ -148,16 +121,16 @@ class NPC:
                 best = entry
         return best
 
-    def talk(self) -> str:
-        if self.sheltering:
-            wet = WET_LINES.get(self.key)
-            if wet:
-                line = wet[self.line_index % len(wet)]
-                self.line_index += 1
-                return line
-        lines = DIALOGUE[self.key]
-        line = lines[self.line_index % len(lines)]
-        self.line_index += 1
+    def talk(self, talk_ctx=None) -> str:
+        """Say something that fits the moment, and remember having said it."""
+        from .dialogue import Talk, choose
+        ctx = talk_ctx if talk_ctx is not None else Talk()
+        ctx.sheltering = self.sheltering
+        ctx.first_time = not self.met
+        line = choose(self.key, ctx, self.rng, self.recent)
+        self.met = True
+        self.recent.append(line)
+        del self.recent[:-4]        # only the last four count as repetition
         return line
 
     # ---------------------------------------------------------------- update
@@ -283,6 +256,16 @@ class Villagers:
                weather: str = "clear"):
         for npc in self.npcs:
             npc.update(dt, hour, time, look_at, weather)
+
+    def to_dict(self) -> dict:
+        """Only who you have already met — everything else follows the clock."""
+        return {"met": [n.key for n in self.npcs if n.met]}
+
+    def from_dict(self, data: dict) -> None:
+        met = set(data.get("met", ()))
+        for npc in self.npcs:
+            npc.met = npc.key in met
+            npc.recent.clear()
 
     def nearest(self, pos: Vec3, radius: float = 3.2) -> NPC | None:
         best, best_d = None, radius * radius
