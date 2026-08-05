@@ -27,7 +27,8 @@ from .game.livestock import FEED_ITEM, SPECIES, Livestock
 from .game.npc import Villagers
 from .game.pests import Pests
 from .game.player import Player
-from .game.state import GameState, load_game, save_game, shop_entries
+from .game.state import (AUTOSAVE, GameState, SLOTS, load_game, newest_slot,
+                         save_game, shop_entries)
 from .game.tutorial import Tutorial
 from .ui.hud import HUD
 from .ui.menu import MainMenu
@@ -37,6 +38,9 @@ from .world.daynight import DayNightCycle
 from .world.props import Props, plot_positions
 from .world.weather import Precipitation
 from .world.world import World
+
+# Real seconds between automatic saves.
+AUTOSAVE_EVERY = 120.0
 
 WEATHER_LABELS = {
     "clear": "Ясно",
@@ -126,6 +130,8 @@ class PatissonApp(ShowBase):
         self.options = OptionsScreen(self, self.hud)
         self.tutorial = Tutorial()
         self._walked = 0.0
+        self.save_slot = 1
+        self.autosave_timer = AUTOSAVE_EVERY
         self.mode = "menu"             # menu | playing
         self.menu = MainMenu(self, self.hud)
         self._setup_input()
@@ -308,6 +314,8 @@ class PatissonApp(ShowBase):
 
     def open_main_menu(self):
         """Return to the title screen; the world keeps rendering behind it."""
+        if self.mode == "playing":
+            self.autosave()          # leaving the world must not lose it
         self.mode = "menu"
         self.paused = False
         self.hud.close_panel()
@@ -345,14 +353,31 @@ class PatissonApp(ShowBase):
 
     def menu_continue(self):
         self.sound("click", 0.6)
-        if load_game(self.state, self.farm, self.cycle, self.player,
-                     livestock=self.livestock, pests=self.pests,
-                     tutorial=self.tutorial):
+        if self.load_slot(newest_slot()):
             self._enter_world()
-            self.state.notify("Игра загружена")
         else:
             self.sound("error", 0.6)
             self.menu.info.setText("Не удалось прочитать сохранение.")
+
+    def menu_load_slot(self, slot):
+        self.sound("click", 0.6)
+        if self.load_slot(slot):
+            self._enter_world()
+        else:
+            self.sound("error", 0.6)
+            self.menu.info.setText("Не удалось прочитать это сохранение.")
+
+    def load_slot(self, slot) -> bool:
+        """Load a slot into the live world. Returns False if it is unusable."""
+        if slot is None:
+            return False
+        ok = load_game(self.state, self.farm, self.cycle, self.player,
+                       livestock=self.livestock, pests=self.pests,
+                       tutorial=self.tutorial, slot=slot)
+        if ok:
+            from .game.state import slot_label
+            self.state.notify(f"Загружено: {slot_label(slot)}")
+        return ok
 
     def reset_world(self):
         """Fresh save state and a fresh set of starting plots."""
@@ -660,10 +685,32 @@ class PatissonApp(ShowBase):
             self.sound("coin" if self.state.coins != before else "error", 0.8)
             self.hud.refresh_panel()
 
-    def on_save(self):
-        path = save_game(self.state, self.farm, self.cycle, self.player,
+    def cycle_save_slot(self):
+        """Pause-menu button: save now, then move to the next slot."""
+        self.on_save()
+        self.save_slot = self.save_slot % len(SLOTS) + 1
+        self.hud.close_panel()
+        self.hud.open_panel("pause")
+
+    def write_save(self, slot):
+        return save_game(self.state, self.farm, self.cycle, self.player,
                          livestock=self.livestock, pests=self.pests,
-                         tutorial=self.tutorial)
+                         tutorial=self.tutorial, slot=slot)
+
+    def autosave(self, reason: str = ""):
+        """Quiet, frequent, and always to its own slot — never over a manual one."""
+        if self.mode != "playing":
+            return
+        self.autosave_timer = AUTOSAVE_EVERY
+        try:
+            self.write_save(AUTOSAVE)
+        except OSError:
+            return
+        if reason:
+            self.state.notify(f"Автосохранение ({reason})", 2.5)
+
+    def on_save(self):
+        path = self.write_save(self.save_slot)
         self.state.notify(f"Сохранено: {path.name}")
 
     def on_load(self):
@@ -733,6 +780,7 @@ class PatissonApp(ShowBase):
         """Sleep through to six in the morning, waking rested."""
         st = self.state
         self.cycle.skip_to_hour(6.0)
+        self.autosave("утро")
         self.player.stamina = self.cfg.game.stamina_max
         st.stamina_frac = 1.0
         self.sound("achieve", 0.35)
@@ -1190,6 +1238,11 @@ class PatissonApp(ShowBase):
                 self.audio.play("thunder", 0.45)
 
         self.worldmap.update(self.player.pos, self.player.heading, self.villagers)
+        if not blocked:
+            self.autosave_timer -= dt
+            if self.autosave_timer <= 0.0:
+                self.autosave()
+
         st.update_notifications(dt)
         if not in_menu:
             prompt, tip = self.context()

@@ -69,6 +69,25 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
 
     # Title screen first, then drop into the world for the rest.
     shot("00-main-menu.png")
+
+    # A save list with something in it, so the slots read as real.
+    st0 = app.state
+    st0.coins = 240
+    app.cycle.total_time = cfg.game.day_length * 2 + 0.45 * cfg.game.day_length
+    app.mode = "playing"
+    app.write_save(1)
+    app.autosave()
+    st0.coins = 640
+    app.cycle.total_time = cfg.game.day_length * 5 + 0.6 * cfg.game.day_length
+    app.write_save(2)
+    app.mode = "menu"
+    app.cycle.total_time = 9.4 / 24.0 * cfg.game.day_length
+    st0.coins = 40
+    app.menu._build_saves()
+    settle(3)
+    shot("00b-saves.png")
+    app.menu._build_root()
+    settle(2)
     app.menu_new_game()
     settle(4)
 

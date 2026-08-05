@@ -221,7 +221,7 @@ class HUD:
             ("Продолжить", app.on_escape),
             ("Настройки", app.toggle_options),
             ("Пропустить обучение", app.skip_tutorial),
-            ("Сохранить", app.on_save),
+            (f"Сохранить (слот {app.save_slot})", app.cycle_save_slot),
             ("В главное меню", app.open_main_menu),
             ("Выход", app.userExit),
         ]

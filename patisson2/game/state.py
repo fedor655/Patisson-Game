@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +11,64 @@ from pathlib import Path
 from .farming import CROPS, CROP_ORDER
 
 SAVE_DIR = Path.home() / ".patisson2"
-SAVE_PATH = SAVE_DIR / "save.json"
+SAVE_PATH = SAVE_DIR / "save.json"      # kept: pre-slot saves live here
+
+SLOTS = (1, 2, 3)
+AUTOSAVE = "auto"
+
+
+def slot_path(slot) -> Path:
+    """Where a slot lives. Slot 1 falls back to the old single-save file."""
+    if slot == AUTOSAVE:
+        return SAVE_DIR / "autosave.json"
+    path = SAVE_DIR / f"save{slot}.json"
+    if slot == 1 and not path.exists() and SAVE_PATH.exists():
+        return SAVE_PATH
+    return path
+
+
+def slot_label(slot) -> str:
+    return "Автосохранение" if slot == AUTOSAVE else f"Слот {slot}"
+
+
+def read_meta(slot) -> dict | None:
+    """Just enough of a save to describe it in a list, or None if unusable."""
+    path = slot_path(slot)
+    if not path.exists():
+        return None
+    try:
+        blob = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return blob.get("meta") or {}
+
+
+def describe(slot) -> str:
+    meta = read_meta(slot)
+    if meta is None:
+        return "пусто"
+    day = meta.get("day", 0) + 1
+    season = meta.get("season", "")
+    coins = meta.get("coins", 0)
+    played = int(meta.get("play_time", 0) // 60)
+    return f"День {day} · {season} · {coins} мон. · {played} мин"
+
+
+def any_save() -> bool:
+    return any(read_meta(s) is not None for s in (AUTOSAVE,) + SLOTS)
+
+
+def newest_slot():
+    """The slot to offer as "continue", or None."""
+    best, best_time = None, -1.0
+    for slot in (AUTOSAVE,) + SLOTS:
+        path = slot_path(slot)
+        if read_meta(slot) is None:
+            continue
+        stamp = path.stat().st_mtime
+        if stamp > best_time:
+            best, best_time = slot, stamp
+    return best
 
 TOOLS = ("hoe", "can", "seeds", "rod", "basket")
 TOOL_NAMES = {
@@ -458,9 +516,14 @@ class GameState:
 
 
 def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None, pests=None, tutorial=None) -> Path:
+              livestock=None, pests=None, tutorial=None, slot=None) -> Path:
+    if slot is not None:
+        path = slot_path(slot)
     path.parent.mkdir(parents=True, exist_ok=True)
     blob = {
+        "meta": {"day": cycle.day, "season": cycle.season_name,
+                 "coins": state.coins, "play_time": state.play_time,
+                 "clock": cycle.clock_string()},
         "state": state.to_dict(),
         "farm": farm.to_dict(),
         "livestock": livestock.to_dict() if livestock else {},
@@ -470,12 +533,18 @@ def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
         "player": {"x": player.pos.x, "y": player.pos.y,
                    "heading": player.heading, "pitch": player.pitch},
     }
-    path.write_text(json.dumps(blob, ensure_ascii=False, indent=1), encoding="utf-8")
+    # Write beside the target and swap it in: a crash mid-write must not be
+    # able to leave a half-written save where the real one used to be.
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(blob, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, path)
     return path
 
 
 def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None, pests=None, tutorial=None) -> bool:
+              livestock=None, pests=None, tutorial=None, slot=None) -> bool:
+    if slot is not None:
+        path = slot_path(slot)
     if not path.exists():
         return False
     try:

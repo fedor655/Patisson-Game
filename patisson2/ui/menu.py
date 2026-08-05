@@ -8,7 +8,8 @@ from direct.gui.DirectGui import DirectButton, DirectFrame
 from direct.gui.OnscreenText import OnscreenText
 from panda3d.core import TextNode, TransparencyAttrib, Vec3
 
-from ..game.state import ACHIEVEMENTS, SAVE_PATH
+from ..game.state import (ACHIEVEMENTS, AUTOSAVE, SLOTS, any_save, describe,
+                          slot_label)
 
 GOLD = (1.0, 0.86, 0.45, 1)
 INK = (0.95, 0.95, 0.93, 1)
@@ -46,7 +47,7 @@ class MainMenu:
 
         # A soft vertical scrim so the text stays readable over any scenery.
         self.scrim = DirectFrame(parent=self.root, frameColor=(0.02, 0.03, 0.03, 0.55),
-                                 frameSize=(-0.95, 0.28, -1.0, 1.0),
+                                 frameSize=(-0.95, 0.52, -1.0, 1.0),
                                  pos=(-0.72, 0, 0))
         self.scrim.setTransparency(TransparencyAttrib.MAlpha)
 
@@ -97,14 +98,31 @@ class MainMenu:
     def _build_root(self):
         self.pane = "root"
         self._clear_buttons()
-        has_save = SAVE_PATH.exists()
+        has_save = any_save()
         self._button(0, "  Играть", self.app.menu_new_game)
         self._button(1, "  Продолжить", self.app.menu_continue, enabled=has_save)
-        self._button(2, "  Настройки", self.app.toggle_options)
-        self._button(3, "  Достижения", lambda: self._build_achievements())
-        self._button(4, "  Выход", self.app.userExit)
+        self._button(2, "  Загрузить…", lambda: self._build_saves(),
+                     enabled=has_save)
+        self._button(3, "  Настройки", self.app.toggle_options)
+        self._button(4, "  Достижения", lambda: self._build_achievements())
+        self._button(5, "  Выход", self.app.userExit)
         self.info.setText("" if has_save else "Сохранения пока нет — начните новую игру.")
         self.footer.setText("Panda3D · всё сгенерировано кодом")
+
+    def _build_saves(self):
+        """List every slot with what is actually in it."""
+        self.app.sound("click", 0.5)
+        self.pane = "saves"
+        self._clear_buttons()
+        slots = [AUTOSAVE] + list(SLOTS)
+        for i, slot in enumerate(slots):
+            text = f"  {slot_label(slot)} — {describe(slot)}"
+            self._button(i, text, lambda s=slot: self.app.menu_load_slot(s),
+                         enabled=describe(slot) != "пусто")
+        self._button(len(slots), "  Назад", lambda: (self.app.sound("click", 0.5),
+                                                     self._build_root()))
+        self.info.setText("Автосохранение пишется каждые две минуты,\n"
+                          "на рассвете и при выходе в меню.")
 
     def _build_settings(self):
         self.app.sound("click", 0.5)
