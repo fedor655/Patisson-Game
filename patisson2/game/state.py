@@ -101,6 +101,7 @@ ACHIEVEMENTS = {
     "pike_hunter": "Поймать щуку",
     "golden": "Поймать золотую рыбку",
     "ichthyologist": "Поймать все виды рыб",
+    "well_rested": "Выспаться в своей кровати",
 }
 
 

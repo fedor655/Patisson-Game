@@ -230,7 +230,10 @@ class PatissonApp(ShowBase):
             self.farm._clear_model(plot)
         self.farm.plots.clear()
         self.farm.harvest_log.clear()
-        self.world.mask.data[:, :, :3] = 0
+        # Only the player-painted channels reset: red is tilled soil and
+        # green is worn path, but blue is the building footprints, which
+        # keep grass from growing through the floors.
+        self.world.mask.data[:, :, :2] = 0
         self.world.mask._dirty = True
         for x, y in plot_positions():
             self.farm.add_plot(x, y)
@@ -431,6 +434,24 @@ class PatissonApp(ShowBase):
         px, py = POT_POSITION
         return (self.player.pos.x - px) ** 2 + (self.player.pos.y - py) ** 2 < 20.0
 
+    def _near_bed(self, reach: float = 1.9) -> bool:
+        bed = getattr(self.props, "bed_pos", None)
+        if bed is None:
+            return False
+        dx = self.player.pos.x - bed[0]
+        dy = self.player.pos.y - bed[1]
+        return dx * dx + dy * dy < reach * reach
+
+    def _sleep(self):
+        """Sleep through to six in the morning, waking rested."""
+        st = self.state
+        self.cycle.skip_to_hour(6.0)
+        self.player.stamina = self.cfg.game.stamina_max
+        st.stamina_frac = 1.0
+        self.sound("achieve", 0.35)
+        st.notify(f"Утро {self.cycle.day + 1}-го дня. Вы выспались.")
+        st.unlock("well_rested")
+
     def _near_well(self) -> bool:
         from .world.props import LAYOUT
         wx, wy, _h = LAYOUT["well"]
@@ -453,6 +474,8 @@ class PatissonApp(ShowBase):
     def context(self):
         """What pressing E would do right now: (prompt, tip)."""
         st = self.state
+        if self._near_bed():
+            return "[E] Лечь спать", "до утра"
         npc = self.villagers.nearest(self.player.pos, 2.8)
         if npc is not None:
             return f"[E] Поговорить — {npc.name}", npc.activity
@@ -521,6 +544,9 @@ class PatissonApp(ShowBase):
             return
         st = self.state
 
+        if self._near_bed():
+            self._sleep()
+            return
         npc = self.villagers.nearest(self.player.pos, 2.8)
         if npc is not None:
             self.sound("click", 0.5)
@@ -771,7 +797,8 @@ class PatissonApp(ShowBase):
         if self.cycle.season != self.world.season:
             self.world.apply_season(self.cycle.season)
             self.props.apply_season(self.cycle.season)
-        self.props.update(dt, self.cycle.total_time, night)
+        self.props.update(dt, self.cycle.total_time, night,
+                          cam_pos if in_menu else self.player.pos)
         self.villagers.update(dt if not blocked else 0.0, self.cycle.hour,
                               self.cycle.total_time,
                               None if in_menu else self.player.eye)

@@ -145,6 +145,17 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     look_at(app.player, (16.0, -13.0, 2.6), (2.0, -24.0, gz(2.0, -24.0) + 2.0))
     shot("07-house.png", hour=17.0)
 
+    # Inside the house: through the door, past the bed, hearth to the right.
+    import math as _math
+    from ..world.layout import LAYOUT
+    hx, hy, hh = LAYOUT["house"]
+    a = _math.radians(hh)
+    fwd = (-_math.sin(a), _math.cos(a))
+    eye = (hx - fwd[0] * 2.6, hy - fwd[1] * 2.6)
+    bed = app.props.bed_pos
+    look_at(app.player, (bed[0], bed[1], bed[2] + 0.55), (eye[0], eye[1], gz(*eye)))
+    shot("07b-house-inside.png", hour=14.0)
+
     # 6. Barn, cows and chickens.
     look_at(app.player, (-19.0, -14.0, 2.0), (-8.0, -22.0, gz(-8.0, -22.0)))
     shot("08-barn.png", hour=11.0)

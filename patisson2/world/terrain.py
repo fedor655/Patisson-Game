@@ -24,6 +24,7 @@ from panda3d.core import (
 )
 
 from ..config import WorldConfig
+from .layout import building_pads
 
 # Everything inside this radius is flattened to farm level.
 FARM_RADIUS = 46.0
@@ -88,11 +89,20 @@ class Terrain:
         self.cfg = cfg
         self.half_span = cfg.size * 1.18      # mesh reaches well past the farm
         self.water_level = cfg.water_level
+        self._pads = None
         self._build_lookup()
 
     # ------------------------------------------------------------ height field
 
-    def _raw_height(self, x, y):
+    def _pad_levels(self):
+        """Ground height at each building centre, before flattening."""
+        if self._pads is None:
+            self._pads = [(px, py, r, blend,
+                           float(self._raw_height(px, py, pads=False)))
+                          for px, py, r, blend in building_pads()]
+        return self._pads
+
+    def _raw_height(self, x, y, pads: bool = True):
         """Analytic terrain height. Works on scalars or numpy arrays."""
         x = np.asarray(x, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
@@ -125,6 +135,15 @@ class Terrain:
         bowl = np.clip(1.0 - pd / POND_RADIUS, 0.0, 1.0)
         bowl = bowl * bowl * (3.0 - 2.0 * bowl)
         h -= bowl * POND_DEPTH
+
+        if pads:
+            # Buildings need level ground: a floor laid across a metre of slope
+            # leaves the terrain poking up through it.
+            for px, py, radius, blend, level in self._pad_levels():
+                pd = np.sqrt((x - px) ** 2 + (y - py) ** 2)
+                t = np.clip(1.0 - (pd - radius) / blend, 0.0, 1.0)
+                t = t * t * (3.0 - 2.0 * t)
+                h = h * (1.0 - t) + level * t
 
         return h
 

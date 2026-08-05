@@ -54,7 +54,7 @@ void main() {
     vec3 groundN = normalize(vec3(-hx, -hy, 2.0 * e));
 
     vec2 maskUv = (base - u_terrainBounds.xy) * u_terrainBounds.zw;
-    vec2 mask = texture(u_fieldMask, maskUv).rg;
+    vec3 mask = texture(u_fieldMask, maskUv).rgb;
 
     // Patchiness so the lawn isn't uniform.
     float density = fbm2(base * 0.09, 3);
@@ -63,6 +63,7 @@ void main() {
              || groundN.z < 0.74
              || mask.r > 0.25
              || mask.g > 0.55
+             || mask.b > 0.35
              || density < 0.19;
 
     if (cull) {

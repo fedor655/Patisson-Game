@@ -41,29 +41,15 @@ def place(parent: NodePath, name: str, pos, h: float = 0.0, scale: float = 1.0,
     return node
 
 
-# Where the interesting things live. Positions are chosen to sit in the flat
-# farm basin around the origin.
-LAYOUT = {
-    "house": (16.0, -13.0, 205.0),
-    "barn": (-19.0, -16.0, 62.0),
-    "well": (7.5, 7.0, 0.0),
-    "market_stall": (-13.0, -2.0, 108.0),
-    "signpost": (2.0, -8.5, 24.0),
-    "scarecrow": (-4.5, 12.0, 200.0),
-    "cooking_pot": (13.4, -8.4, 30.0),
-}
-
-# The tilled plots the player starts with: (x, y).
-PLOT_ORIGIN = (-3.0, 1.0)
-PLOT_COLS, PLOT_ROWS = 6, 4
-PLOT_SPACING = 1.5
-
-
-def plot_positions():
-    ox, oy = PLOT_ORIGIN
-    for j in range(PLOT_ROWS):
-        for i in range(PLOT_COLS):
-            yield (ox + i * PLOT_SPACING, oy + j * PLOT_SPACING)
+from .layout import (  # noqa: F401  (re-exported for callers)
+    BUILDING_SHAPES,
+    LAYOUT,
+    PLOT_ORIGIN,
+    PLOT_COLS,
+    PLOT_ROWS,
+    PLOT_SPACING,
+    plot_positions,
+)
 
 
 class Props:
@@ -87,6 +73,9 @@ class Props:
 
         pipeline.apply_scene_shader(self.dynamic, micro_detail=0.08)
 
+        self.bed_pos = None
+        self.hearth_pos = None
+        self.barn_light = None
         self._place_buildings()
         self._place_fences()
         self._scatter_nature()
@@ -125,6 +114,17 @@ class Props:
             holder.flattenStrong()
         return len(buckets)
 
+    def _local_to_world(self, building: str, local):
+        """Map a point in a building's own frame out into the world."""
+        import math as _m
+        bx, by, bh = LAYOUT[building]
+        a = _m.radians(bh)
+        ca, sa = _m.cos(a), _m.sin(a)
+        lx, ly = local
+        wx = bx + lx * ca - ly * sa
+        wy = by + lx * sa + ly * ca
+        return (wx, wy, self.ground(wx, wy))
+
     def ground(self, x, y):
         return self.world.height_at(x, y)
 
@@ -132,7 +132,25 @@ class Props:
 
     def _place_buildings(self):
         for name, (x, y, h) in LAYOUT.items():
-            place(self.root, name, (x, y, self.ground(x, y) - 0.05), h)
+            node = place(self.root, name, (x, y, self.ground(x, y) - 0.05), h)
+            shape = BUILDING_SHAPES.get(name)
+            if shape is not None:
+                w, d, door = shape
+                self.world.blockers.add_walls(x, y, h, w, d, thickness=0.34,
+                                              door_side="front", door_width=door)
+                # Blue channel of the field mask means "no grass here" — the
+                # blades are placed on the GPU and know nothing about walls.
+                self.world.mask.paint(x, y, math.hypot(w, d) / 2.0 + 0.6, 2,
+                                      falloff=False)
+        # Interior landmarks, in each building's own frame.
+        self.bed_pos = self._local_to_world("house", (-1.55, 2.05))
+        self.hearth_pos = self._local_to_world("house", (2.6, 1.2))
+        self.barn_light = self._local_to_world("barn", (0.0, 1.0))
+        # Solid dressing.
+        wx, wy, _wh = LAYOUT["well"]
+        self.world.blockers.add_post(wx, wy, 0.95, top=1.2)
+        sx, sy, sh = LAYOUT["market_stall"]
+        self.world.blockers.add_box(sx, sy, 1.25, 0.55, sh, top=1.3)
         # A few crates and barrels for dressing.
         for x, y, name in ((14.0, -8.6, "crate"), (13.2, -7.6, "crate"),
                            (-16.5, -12.0, "barrel"), (-15.6, -12.4, "barrel"),
@@ -165,6 +183,7 @@ class Props:
             if (x, y, h) == gate:
                 continue
             place(self.root, "fence", (x, y, self.ground(x, y) - 0.06), h)
+            self.world.blockers.add_box(x, y, 1.2, 0.09, h, top=1.1)
 
     def _scatter_nature(self):
         r = self.rng
@@ -198,6 +217,7 @@ class Props:
                              weights=[3, 3, 2, 2])[0]
             place(self.foliage, kind, (x, y, self.ground(x, y) - 0.1),
                   r.uniform(0, 360), r.uniform(0.8, 1.35))
+            self.world.blockers.add_post(x, y, 0.40, top=2.6)
             placed += 1
 
         for _ in range(90):
@@ -274,14 +294,25 @@ class Props:
             self.animals.append(Flutterer(node, self.world, (x, y), seed=60 + i))
 
     def _place_lanterns(self):
-        """Four lanterns that become the game's point lights after dark."""
-        spots = [(2.0, -7.0), (8.6, 5.6), (-12.0, -3.6), (14.6, -9.0)]
-        for i, (x, y) in enumerate(spots):
+        """Lanterns light the yard after dark; the hearth burns indoors always.
+
+        There are only four point lights, so rather than pinning them to fixed
+        lanterns the update picks whichever emitters are nearest the player.
+        """
+        spots = [(2.0, -7.0), (8.6, 5.6), (-12.0, -3.6), (14.6, -9.0),
+                 (-17.0, -12.4), (12.6, -16.2)]
+        for x, y in spots:
             z = self.ground(x, y)
-            post = place(self.root, "signpost", (x, y, z), self.rng.uniform(0, 360),
-                         0.62) if i == 99 else None
-            node = place(self.root, "lantern", (x, y, z + 1.35), 0, 1.0)
-            self.lanterns.append((node, Vec3(x, y, z + 1.45)))
+            place(self.root, "lantern", (x, y, z + 1.35), 0, 1.0)
+            self.lanterns.append((Vec3(x, y, z + 1.45), False))
+        # A fire inside the house: the only thing that makes the interior
+        # readable, since no sunlight reaches in through solid walls.
+        if self.hearth_pos is not None:
+            hx, hy, hz = self.hearth_pos
+            self.lanterns.append((Vec3(hx, hy, hz + 1.05), True))
+        if self.barn_light is not None:
+            bx, by, bz = self.barn_light
+            self.lanterns.append((Vec3(bx, by, bz + 2.2), True))
 
     # ---------------------------------------------------------------- update
 
@@ -301,13 +332,30 @@ class Props:
         for node in (self.foliage, self.small_foliage):
             node.setColorScale(*tint)
 
-    def update(self, dt: float, time: float, night: float):
+    def update(self, dt: float, time: float, night: float, player_pos=None):
         for a in self.animals:
             a.update(dt, time)
-        for i, (node, pos) in enumerate(self.lanterns):
-            if i < len(self.pipeline.point_lights):
-                warm = Vec3(1.0, 0.62, 0.26) * (5.5 * night)
-                self.pipeline.set_point_light(i, pos, warm, (1.0, 0.20, 0.09))
+
+        slots = len(self.pipeline.point_lights)
+        if player_pos is None:
+            lit = self.lanterns[:slots]
+        else:
+            # Nearest emitters win the limited slots. Indoor fires always
+            # count; outdoor lanterns only once it is dark enough to matter.
+            candidates = [(pos, indoor) for pos, indoor in self.lanterns
+                          if indoor or night > 0.03]
+            candidates.sort(key=lambda e: (e[0] - player_pos).lengthSquared())
+            lit = candidates[:slots]
+
+        for i in range(slots):
+            if i < len(lit):
+                pos, indoor = lit[i]
+                strength = 6.5 if indoor else 5.5 * night
+                warm = Vec3(1.0, 0.58, 0.24) * strength
+                self.pipeline.set_point_light(i, pos, warm, (1.0, 0.22, 0.10))
+            else:
+                self.pipeline.set_point_light(i, Vec3(0, 0, -500),
+                                              Vec3(0, 0, 0), (1.0, 1.0, 1.0))
 
 
 class Wanderer:

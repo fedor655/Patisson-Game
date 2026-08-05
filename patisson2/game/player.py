@@ -119,6 +119,9 @@ class Player:
             self.vel.x *= 0.4
             self.vel.y *= 0.4
 
+        # Walls, trunks and fences. Doorways are simply gaps in the blockers.
+        nx, ny = self.world.blockers.resolve(nx, ny, 0.34, self.pos.z)
+
         limit = self.world.terrain.half_span * 0.85
         nx = max(-limit, min(limit, nx))
         ny = max(-limit, min(limit, ny))

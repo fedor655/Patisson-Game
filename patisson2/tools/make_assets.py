@@ -279,37 +279,142 @@ def gable_roof(w: float, d: float, h: float, colour, overhang=0.35) -> Mesh:
     return m
 
 
+# House footprint, shared with the collision blockers in world/props.py.
+HOUSE_W, HOUSE_D, HOUSE_H = 6.4, 7.8, 3.2
+HOUSE_DOOR_W = 1.5
+BARN_W, BARN_D, BARN_H = 8.0, 10.0, 3.8
+BARN_DOOR_W = 3.0
+
+
+def wall_with_gap(width: float, height: float, colour, gap: float,
+                  gap_height: float, planks: int = 8) -> Mesh:
+    """A plank wall with a doorway cut out of the middle."""
+    m = Mesh()
+    side = (width - gap) / 2.0
+    if side > 0.02:
+        for sx in (-1, 1):
+            piece = plank_wall(side, height, colour, planks)
+            m.extend(piece.translate(sx * (gap + side) / 2.0, 0, 0))
+    # Lintel over the opening.
+    lintel = height - gap_height
+    if lintel > 0.05:
+        m.extend(plank_wall(gap, lintel, colour, max(2, planks // 3))
+                 .translate(0, 0, gap_height))
+    return m
+
+
+def make_bed(sheet=srgb(196, 206, 214), frame=WOOD_DARK):
+    m = Mesh()
+    m.extend(box(1.15, 2.05, 0.28, frame, origin="base"))
+    m.extend(box(1.05, 1.95, 0.20, sheet, origin="base").translate(0, 0, 0.28))
+    m.extend(box(0.60, 0.34, 0.14, srgb(238, 238, 232), origin="base")
+             .translate(0, -0.74, 0.46))
+    for sy in (-1.02, 1.02):
+        m.extend(box(1.15, 0.10, 0.55 if sy < 0 else 0.36, frame, origin="base")
+                 .translate(0, sy, 0))
+    return m
+
+
+def make_table_and_stools():
+    m = Mesh()
+    m.extend(box(1.5, 0.9, 0.09, PLANK, origin="base").translate(0, 0, 0.72))
+    for sx in (-0.62, 0.62):
+        for sy in (-0.32, 0.32):
+            m.extend(box(0.09, 0.09, 0.72, WOOD_DARK, origin="base")
+                     .translate(sx, sy, 0))
+    for sy in (-0.85, 0.85):
+        m.extend(cylinder(0.19, 0.06, PLANK, 10).translate(0, sy, 0.44))
+        for a in (0, 120, 240):
+            ang = math.radians(a)
+            m.extend(box(0.055, 0.055, 0.44, WOOD_DARK, origin="base")
+                     .translate(math.cos(ang) * 0.12 + 0, math.sin(ang) * 0.12 + sy, 0))
+    return m
+
+
+def make_shelf():
+    m = Mesh()
+    for z in (0.85, 1.35):
+        m.extend(box(1.4, 0.32, 0.055, PLANK, origin="base").translate(0, 0, z))
+    for sx in (-0.66, 0.66):
+        m.extend(box(0.06, 0.32, 1.40, WOOD_DARK, origin="base").translate(sx, 0, 0))
+    r = _rng(88)
+    for i in range(7):
+        x = -0.55 + i * 0.18
+        z = 0.905 if i % 2 else 1.405
+        m.extend(cylinder(0.055, r.uniform(0.14, 0.22),
+                          r.choice([srgb(168, 132, 90), srgb(126, 148, 96),
+                                    srgb(180, 96, 78)]), 8).translate(x, 0, z))
+    return m
+
+
+def make_hearth():
+    stone = Mesh()
+    fire = Mesh()
+    stone.extend(box(1.7, 0.7, 0.35, STONE, origin="base"))
+    stone.extend(box(1.7, 0.7, 1.9, STONE, origin="base").translate(0, 0.22, 0))
+    stone.extend(box(1.25, 0.30, 1.05, srgb(28, 24, 22), origin="base")
+                 .translate(0, -0.05, 0.32))
+    r = _rng(91)
+    for i in range(6):
+        fire.extend(box(0.16, 0.10, 0.07, srgb(232, 122, 44), origin="base")
+                    .rotate_z(r.uniform(0, 180))
+                    .translate(r.uniform(-0.35, 0.35), -0.02, 0.36 + i * 0.03))
+    for i in range(3):
+        stone.extend(box(0.62, 0.11, 0.11, WOOD_DARK, origin="center")
+                     .rotate_z(r.uniform(-25, 25))
+                     .translate(r.uniform(-0.2, 0.2), -0.02, 0.42 + i * 0.09))
+    return stone, fire
+
+
 def make_house():
     body = Mesh()
     trim = Mesh()
     roof = Mesh()
     glass = Mesh()
+    fire = Mesh()
 
-    W, D, H = 6.4, 7.8, 3.2
-    for sx, sy, rot in ((0, -D / 2, 0), (0, D / 2, 0)):
-        body.extend(plank_wall(W, H, PLANK, 8).translate(sx, sy, 0))
+    W, D, H = HOUSE_W, HOUSE_D, HOUSE_H
+
+    # Front wall carries the doorway; the rest are solid.
+    body.extend(wall_with_gap(W, H, PLANK, HOUSE_DOOR_W, 2.15)
+                .translate(0, -D / 2, 0))
+    body.extend(plank_wall(W, H, PLANK, 8).translate(0, D / 2, 0))
     for sx in (-W / 2, W / 2):
-        w = plank_wall(D, H, PLANK, 8).rotate_z(90).translate(sx, 0, 0)
-        body.extend(w)
-    # Gable infill.
+        body.extend(plank_wall(D, H, PLANK, 8).rotate_z(90).translate(sx, 0, 0))
     for sy in (-D / 2, D / 2):
         g = Mesh()
         g.add_face((-W / 2, sy, H), (W / 2, sy, H), (0, sy, H + 1.7), PLANK)
         body.extend(g)
 
+    # Floor and a ceiling, so the inside is a room rather than a shell.
+    # Deep enough that sloping ground can never poke through it.
+    body.extend(box(W + 0.34, D + 0.34, 0.9, srgb(150, 116, 78), origin="base")
+                .translate(0, 0, -0.84))
+    body.extend(box(W - 0.2, D - 0.2, 0.10, WOOD_DARK, origin="base")
+                .translate(0, 0, H - 0.10))
+    for i in range(5):
+        trim.extend(box(0.13, D - 0.3, 0.16, WOOD_DARK, origin="base")
+                    .translate(-2.2 + i * 1.1, 0, H - 0.26))
+
     roof.extend(gable_roof(W, D, 1.7, ROOF_RED).translate(0, 0, H))
-    # Ridge beam and corner posts.
     trim.extend(box(0.14, D + 0.9, 0.14, WOOD_DARK).translate(0, 0, H + 1.72))
     for sx in (-W / 2, W / 2):
         for sy in (-D / 2, D / 2):
             trim.extend(box(0.20, 0.20, H, WOOD_DARK, origin="base")
                         .translate(sx, sy, 0))
-    # Door.
-    trim.extend(box(1.0, 0.12, 2.0, WOOD_DARK, origin="base")
-                .translate(0, -D / 2 - 0.07, 0))
-    trim.extend(sphere(0.055, GOLD).translate(0.32, -D / 2 - 0.14, 1.05))
-    # Windows.
-    for pos in ((-2.0, -D / 2), (2.0, -D / 2), (-W / 2, -1.4), (-W / 2, 1.4),
+
+    # Door frame and an open door swung inwards.
+    for sx in (-1, 1):
+        trim.extend(box(0.16, 0.22, 2.25, WOOD_DARK, origin="base")
+                    .translate(sx * (HOUSE_DOOR_W / 2 + 0.08), -D / 2, 0))
+    trim.extend(box(HOUSE_DOOR_W + 0.32, 0.22, 0.16, WOOD_DARK, origin="base")
+                .translate(0, -D / 2, 2.25))
+    door = box(1.42, 0.09, 2.1, WOOD_DARK, origin="base")
+    door.rotate_z(-72).translate(-HOUSE_DOOR_W / 2, -D / 2 + 0.1, 0)
+    trim.extend(door)
+    trim.extend(sphere(0.05, GOLD).translate(-1.9, -D / 2 + 1.3, 1.05))
+
+    for pos in ((-2.3, -D / 2), (2.3, -D / 2), (-W / 2, -1.4), (-W / 2, 1.4),
                 (W / 2, 0.0)):
         x, y = pos
         along_y = abs(x) == W / 2
@@ -321,49 +426,99 @@ def make_house():
         glass.extend(box(fw, fd, 0.88, srgb(150, 186, 200))
                      .translate(x + (ox * 1.3 if along_y else 0),
                                 y + (0 if along_y else (-0.12 if y < 0 else 0.12)), 1.75))
-    # Chimney.
+
     trim.extend(box(0.62, 0.62, 2.2, STONE, origin="base").translate(1.6, 1.2, H - 0.2))
-    # Step.
-    trim.extend(box(1.6, 0.7, 0.16, STONE, origin="base")
+    trim.extend(box(1.9, 0.7, 0.16, STONE, origin="base")
                 .translate(0, -D / 2 - 0.75, 0))
+
+    # --- furniture -------------------------------------------------------
+    trim.extend(make_bed().translate(-1.55, 2.05, 0.0))
+    trim.extend(make_table_and_stools().translate(1.35, -0.55, 0.0))
+    trim.extend(make_shelf().translate(0, D / 2 - 0.25, 0.0))
+    hearth_stone, hearth_fire = make_hearth()
+    trim.extend(hearth_stone.rotate_z(-90).translate(W / 2 - 0.42, 1.2, 0.0))
+    fire.extend(hearth_fire.rotate_z(-90).translate(W / 2 - 0.42, 1.2, 0.0))
+    trim.extend(box(0.9, 0.6, 0.6, WOOD_DARK, origin="base")
+                .translate(-W / 2 + 0.62, -2.5, 0))
 
     return [Part(body, "walls", roughness=0.88),
             Part(trim, "trim", roughness=0.82),
             Part(roof, "roof", roughness=0.90),
-            Part(glass, "glass", roughness=0.14, metallic=0.0)]
+            Part(glass, "glass", roughness=0.14, metallic=0.0),
+            Part(fire, "fire", roughness=0.7, emissive=(1.0, 0.44, 0.14))]
 
 
 def make_barn():
     body = Mesh()
     trim = Mesh()
     roof = Mesh()
+    hay = Mesh()
     W, D, H = 7.2, 9.0, 4.0
     red = srgb(150, 62, 52)
-    for sy in (-D / 2, D / 2):
-        body.extend(plank_wall(W, H, red, 9).translate(0, sy, 0))
+    door_w = 2.8
+
+    body.extend(wall_with_gap(W, H, red, door_w, 3.0, 9).translate(0, -D / 2, 0))
+    body.extend(plank_wall(W, H, red, 9).translate(0, D / 2, 0))
     for sx in (-W / 2, W / 2):
         body.extend(plank_wall(D, H, red, 9).rotate_z(90).translate(sx, 0, 0))
     for sy in (-D / 2, D / 2):
         g = Mesh()
         g.add_face((-W / 2, sy, H), (W / 2, sy, H), (0, sy, H + 2.3), red)
         body.extend(g)
+
+    # Packed-earth floor and the loft above.
+    body.extend(box(W + 0.34, D + 0.34, 0.9, srgb(104, 84, 62), origin="base")
+                .translate(0, 0, -0.85))
+    body.extend(box(W - 0.3, 2.6, 0.12, PLANK, origin="base")
+                .translate(0, D / 2 - 1.4, H - 1.1))
+    for i in range(6):
+        trim.extend(box(0.12, D - 0.3, 0.20, WOOD_DARK, origin="base")
+                    .translate(-2.8 + i * 1.12, 0, H - 0.22))
+
     roof.extend(gable_roof(W, D, 2.3, ROOF_SLATE, overhang=0.45).translate(0, 0, H))
-    # White trim boards, the classic barn look.
     for sy in (-D / 2 - 0.02, D / 2 + 0.02):
         trim.extend(box(W + 0.1, 0.09, 0.18, WHITE).translate(0, sy, H - 0.1))
-        trim.extend(box(0.22, 0.09, H, WHITE, origin="base").translate(0, sy, 0))
-    trim.extend(box(2.6, 0.14, 3.0, WOOD_DARK, origin="base")
-                .translate(0, -D / 2 - 0.08, 0))
-    trim.extend(box(0.10, 0.16, 3.0, WHITE, origin="base")
-                .translate(0, -D / 2 - 0.16, 0))
-    trim.extend(box(0.10, 3.6, 0.10, WOOD_DARK).rotate_z(0)
-                .translate(0, -D / 2 - 0.16, 3.05))
-    # Hay loft opening.
+    # Door frame, and both leaves swung open against the wall.
+    for sx in (-1, 1):
+        trim.extend(box(0.14, 0.20, 3.1, WHITE, origin="base")
+                    .translate(sx * (door_w / 2 + 0.07), -D / 2, 0))
+        leaf = box(1.32, 0.10, 2.95, WOOD_DARK, origin="base")
+        leaf.rotate_z(sx * 74).translate(sx * (door_w / 2), -D / 2 + 0.12, 0)
+        trim.extend(leaf)
+    trim.extend(box(door_w + 0.3, 0.16, 0.18, WHITE, origin="base")
+                .translate(0, -D / 2, 3.1))
     trim.extend(box(1.3, 0.12, 1.1, WOOD_DARK, origin="base")
                 .translate(0, -D / 2 - 0.09, H + 0.35))
+
+    # --- inside ----------------------------------------------------------
+    # Stalls down the left wall.
+    for i in range(3):
+        y = -2.4 + i * 2.3
+        trim.extend(box(2.3, 0.10, 1.15, PLANK, origin="base")
+                    .translate(-W / 2 + 1.2, y - 1.1, 0))
+    trim.extend(box(0.10, 6.9, 1.15, PLANK, origin="base")
+                .translate(-W / 2 + 2.35, -0.2, 0))
+    # Feed trough on the right.
+    trim.extend(box(0.72, 3.2, 0.46, WOOD_DARK, origin="base")
+                .translate(W / 2 - 0.75, -0.6, 0))
+    r = _rng(97)
+    for i in range(9):
+        hay.extend(box(0.62, 0.62, 0.44, srgb(206, 178, 96), origin="base")
+                   .rotate_z(r.uniform(0, 90))
+                   .translate(W / 2 - 1.9 + r.uniform(-0.2, 0.2),
+                              2.2 + (i % 3) * 0.72,
+                              0.44 * (i // 3)))
+    for i in range(14):
+        hay.extend(box(0.30, 0.06, 0.05, srgb(214, 190, 112), origin="base")
+                   .rotate_z(r.uniform(0, 180))
+                   .translate(r.uniform(-2.4, 2.4), r.uniform(-3.8, 3.8), 0.02))
+    trim.extend(box(0.09, 0.09, 1.85, WOOD_DARK, origin="base")
+                .rotate_y(16).translate(-W / 2 + 0.5, -3.6, 0))
+
     return [Part(body, "walls", roughness=0.9),
             Part(trim, "trim", roughness=0.85),
-            Part(roof, "roof", roughness=0.92)]
+            Part(roof, "roof", roughness=0.92),
+            Part(hay, "hay", roughness=0.95)]
 
 
 def make_well():

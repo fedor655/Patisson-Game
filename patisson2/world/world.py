@@ -18,6 +18,7 @@ from ..engine.pipeline import MASK_REFLECT, MASK_SHADOW
 from ..engine.reflection import PlanarReflection
 from ..engine.shaderlib import make_shader
 from .daynight import SEASON_STYLE
+from .collision import Blockers
 from .grass import build_blade_node
 from .terrain import Terrain
 from .water import build_water_node, water_bounds
@@ -94,6 +95,8 @@ class World:
         self.wet = 0.0
 
         self.root = base.render.attachNewNode("world")
+        # Filled in by Props once the dressing is placed.
+        self.blockers = Blockers()
         self.terrain = Terrain(cfg)
 
         span = self.terrain.half_span
