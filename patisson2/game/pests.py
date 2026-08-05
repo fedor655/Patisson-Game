@@ -83,6 +83,7 @@ class Crow:
         self.timer = CROW_APPROACH
         self.angle = rng.uniform(0, math.tau)
         self.height = 6.0
+        self.landed = False
 
     def update(self, dt: float, player_pos: Vec3) -> str | None:
         self.timer -= dt
@@ -101,6 +102,7 @@ class Crow:
             if self.timer <= 0.0:
                 self.phase = "eat"
                 self.timer = CROW_EAT
+                self.landed = True          # the caw that announces it
         elif self.phase == "eat":
             # Hop about on the plot, pecking.
             bob = abs(math.sin(self.timer * 5.5)) * 0.09
@@ -188,6 +190,9 @@ class Pests:
 
         for crow in list(self.crows):
             result = crow.update(dt, player_pos)
+            if crow.landed:
+                crow.landed = False
+                self.caw(crow.node.getPos())
             if result == "stole":
                 crop = crow.plot.crop
                 self.farm.clear(crow.plot)
@@ -199,8 +204,12 @@ class Pests:
                 crow.node.removeNode()
                 self.crows.remove(crow)
             elif result == "scared":
+                self.caw(crow.node.getPos())
                 events.append("Ворона улетела.")
         return events
+
+    def caw(self, pos) -> None:
+        """Overridden by the app to place the sound; a no-op without audio."""
 
     # ----------------------------------------------------------------- save
 

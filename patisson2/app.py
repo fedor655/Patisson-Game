@@ -35,7 +35,9 @@ from .ui.menu import MainMenu
 from .ui.options import OptionsScreen
 from .ui.worldmap import WorldMap
 from .world.daynight import DayNightCycle
+from .world.layout import indoors_at
 from .world.props import Props, plot_positions
+from .world.soundscape import Soundscape
 from .world.weather import Precipitation
 from .world.world import World
 
@@ -114,6 +116,9 @@ class PatissonApp(ShowBase):
         self.audio = AudioManager(self) if audio else None
         if self.audio:
             self.state.sound = self.audio.play
+        self.soundscape = Soundscape(self.props.trees, self.world.pond_centre,
+                                     self.world.pond_radius)
+        self.pests.caw = self._crow_caw
 
         for x, y in plot_positions():
             self.farm.add_plot(x, y)
@@ -1230,10 +1235,16 @@ class PatissonApp(ShowBase):
 
         if self.audio:
             speed = math.hypot(self.player.vel.x, self.player.vel.y) / 4.4
+            # Walls should cut the birds and the pond out; until now nothing
+            # ever told the mixer the player had gone inside.
+            indoors = indoors_at(self.player.pos.x, self.player.pos.y) is not None
+            beds = self.soundscape.beds(self.player.pos.x, self.player.pos.y,
+                                        indoors=indoors)
             event = self.audio.update(
                 dt, hour=self.cycle.hour, is_night=sky.is_night,
                 weather=self.weather, moving=0.0 if blocked else speed,
-                on_ground=self.player.on_ground, paused=blocked)
+                on_ground=self.player.on_ground, paused=blocked,
+                indoors=indoors, places=beds)
             if event == "critter" and not blocked:
                 self._critter_sound()
             if self.weather == "rain" and not blocked \
@@ -1261,22 +1272,41 @@ class PatissonApp(ShowBase):
 
         return task.cont
 
+    def _crow_caw(self, pos):
+        if self.audio:
+            self.audio.play_at("caw", pos, self.player.eye, falloff=45.0,
+                               volume=0.85, pitch=0.06)
+
     def _critter_sound(self):
-        """Let a nearby animal pipe up, attenuated by distance."""
+        """Let something nearby pipe up, attenuated by distance.
+
+        Livestock first if the player is standing among it — a cow three metres
+        away should not be drowned out by a bird forty metres off — otherwise
+        whatever wildlife suits the hour and the place.
+        """
         near = [a for a in self.props.animals
                 if (a.node.getPos() - self.player.pos).lengthSquared() < 640.0]
-        if not near:
-            return
-        animal = self.rng.choice(near)
-        name = animal.node.getName()
-        if name.startswith("chicken"):
-            sound, falloff = "cluck", 20.0
-        elif name.startswith("cow"):
-            sound, falloff = "moo", 34.0
-        else:
-            return
-        self.audio.play_at(sound, animal.node.getPos(), self.player.eye,
-                           falloff=falloff, volume=0.8, pitch=0.08)
+        if near and self.rng.random() < 0.55:
+            animal = self.rng.choice(near)
+            name = animal.node.getName()
+            if name.startswith("chicken"):
+                sound, falloff = "cluck", 20.0
+            elif name.startswith("cow"):
+                sound, falloff = "moo", 34.0
+            else:
+                sound = None
+            if sound:
+                self.audio.play_at(sound, animal.node.getPos(), self.player.eye,
+                                   falloff=falloff, volume=0.8, pitch=0.08)
+                return
+
+        choice = self.soundscape.pick(self.player.pos.x, self.player.pos.y,
+                                      self.cycle.hour, self.cycle.season,
+                                      self.weather)
+        if choice:
+            sound, pos, falloff, volume = choice
+            self.audio.play_at(sound, pos, self.player.eye, falloff=falloff,
+                               volume=volume, pitch=0.07)
 
     def _mouse_look(self):
         if not self.win.getProperties().getForeground():

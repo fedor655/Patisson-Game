@@ -199,6 +199,83 @@ def sfx_moo() -> np.ndarray:
     return normalize(reverb(mix(v, breath, gains=(0.7, 1.0)), 0.4, 0.18), 0.6)
 
 
+def _warble(f0: float, f1: float, dur: float, gain: float = 1.0) -> np.ndarray:
+    """One swooping whistle — the building block of every bird here."""
+    sweep = np.linspace(f0, f1, seconds(dur))
+    body = sine(sweep, dur) * 0.85 + sine(sweep * 2.0, dur) * 0.15
+    return body * perc_env(dur, 0.006, 5.0) * gain
+
+
+def sfx_bird(seed: int = 0) -> np.ndarray:
+    """A single songbird phrase, meant to come out of one particular tree."""
+    rng = random.Random(301 + seed)
+    dur = 1.1
+    t = Track(dur)
+    at = 0.02
+    for _ in range(rng.randint(2, 4)):
+        f = rng.uniform(2300, 3900)
+        seg = rng.uniform(0.07, 0.13)
+        t.add(at, _warble(f, f * rng.uniform(0.75, 1.45), seg), rng.uniform(0.5, 1.0))
+        at += seg + rng.uniform(0.04, 0.14)
+    if rng.random() < 0.6:                       # closing trill
+        f = rng.uniform(2800, 4200)
+        for k in range(rng.randint(3, 6)):
+            t.add(at + k * 0.055, _warble(f, f * 1.05, 0.045), 0.5)
+    return normalize(reverb(t.result(), 0.45, 0.16), 0.55)
+
+
+def sfx_frog() -> np.ndarray:
+    """Croak: a low buzzing pulse train, the way a real one stutters."""
+    dur = 0.75
+    t = Track(dur)
+    rng = random.Random(311)
+    at = 0.02
+    for _ in range(rng.randint(2, 3)):
+        seg = rng.uniform(0.14, 0.22)
+        f = rng.uniform(115, 165)
+        buzz = saw(f, seg, 9)
+        # Amplitude-modulate hard: that rattle is what makes it a frog.
+        am = (0.55 + 0.45 * np.sign(np.sin(2 * np.pi * 42.0 * time_axis(seg)))
+              ).astype(np.float32)
+        v = lowpass_fast(buzz * am, 1300) * adsr(seg, 0.02, 0.05, 0.8, 0.08)
+        t.add(at, v, rng.uniform(0.6, 0.95))
+        at += seg + rng.uniform(0.05, 0.12)
+    return normalize(reverb(t.result(), 0.5, 0.2), 0.5)
+
+
+def sfx_owl() -> np.ndarray:
+    """Two soft hoots, an octave apart in feel if not in pitch."""
+    t = Track(1.6)
+    for i, (f, at, gain) in enumerate(((392.0, 0.0, 1.0), (352.0, 0.62, 0.8))):
+        dur = 0.42
+        bend = np.concatenate([
+            np.linspace(f * 0.94, f, seconds(0.10)),
+            np.full(seconds(dur) - seconds(0.10), f, dtype=np.float32),
+        ])
+        v = sine(bend, dur) * 0.8 + sine(bend * 2.0, dur) * 0.06
+        breath = lowpass_fast(noise(dur, 321 + i), 700) * 0.08
+        t.add(at, lowpass_fast(v + breath, 1200) * adsr(dur, 0.09, 0.12, 0.75, 0.20),
+              gain * 0.9)
+    return normalize(reverb(t.result(), 0.8, 0.3), 0.5)
+
+
+def sfx_caw() -> np.ndarray:
+    """The crow, when it lands on your beds. Harsh on purpose."""
+    dur = 0.9
+    t = Track(dur)
+    rng = random.Random(331)
+    at = 0.0
+    for _ in range(2):
+        seg = rng.uniform(0.16, 0.24)
+        f = rng.uniform(620, 780)
+        harsh = saw(np.linspace(f, f * 0.72, seconds(seg)), seg, 14)
+        rasp = bandpass(noise(seg, 332), 900, 5200) * 0.5
+        v = bandpass(harsh + rasp, 500, 5000) * perc_env(seg, 0.008, 4.0)
+        t.add(at, v, rng.uniform(0.7, 1.0))
+        at += seg + rng.uniform(0.12, 0.2)
+    return normalize(t.result(), 0.55)
+
+
 def sfx_thunder() -> np.ndarray:
     dur = 2.8
     rumble = lowpass_fast(noise(dur, 91), 260)
@@ -281,6 +358,42 @@ def amb_rain(duration: float = 12.0) -> np.ndarray:
         f = rng.uniform(1100, 2800)
         tr.add(at, sine(f, 0.03) * perc_env(0.03, 0.001, 10.0), rng.uniform(0.02, 0.06))
     return normalize(loopable(tr.result(), 1.5), 0.5)
+
+
+def amb_water(duration: float = 10.0) -> np.ndarray:
+    """Pond edge: small waves, and the odd drip off a reed."""
+    t = time_axis(duration)
+    lap = lowpass_fast(noise(duration, 131), 900)
+    # Two slow swells at incommensurate rates so the loop never obviously ticks.
+    swell = (0.6 + 0.4 * np.sin(2 * np.pi * 0.21 * t)
+             + 0.2 * np.sin(2 * np.pi * 0.13 * t + 0.7)).astype(np.float32)
+    body = bandpass(noise(duration, 132), 180, 2400) * 0.35
+    tr = Track(duration).add(0, lap * swell * 0.8).add(0, body * swell)
+    rng = random.Random(37)
+    for _ in range(22):
+        at = rng.uniform(0, duration - 0.1)
+        f = rng.uniform(900, 2400)
+        tr.add(at, sine(f, 0.045) * perc_env(0.045, 0.001, 9.0), rng.uniform(0.02, 0.07))
+    return normalize(loopable(tr.result(), 1.4), 0.34)
+
+
+def amb_leaves(duration: float = 11.0) -> np.ndarray:
+    """Under the trees: the wind bed, but with leaves in it."""
+    t = time_axis(duration)
+    gust = (0.45 + 0.55 * np.sin(2 * np.pi * 0.09 * t + 0.4)
+            + 0.2 * np.sin(2 * np.pi * 0.037 * t)).astype(np.float32)
+    rustle = bandpass(noise(duration, 141), 1600, 8000) * gust
+    trunk = lowpass_fast(noise(duration, 142), 340) * gust * 0.45
+    # Creaking branches, sparse and low.
+    tr = Track(duration).add(0, rustle * 0.7).add(0, trunk)
+    rng = random.Random(43)
+    for _ in range(6):
+        at = rng.uniform(0, duration - 0.6)
+        f = rng.uniform(180, 340)
+        creak = saw(np.linspace(f, f * 0.9, seconds(0.5)), 0.5, 6)
+        tr.add(at, bandpass(creak, 150, 1600) * perc_env(0.5, 0.08, 3.0),
+               rng.uniform(0.03, 0.08))
+    return normalize(loopable(tr.result(), 1.5), 0.30)
 
 
 # ---------------------------------------------------------------- music
@@ -412,6 +525,14 @@ SFX = {
     "cluck": sfx_cluck,
     "moo": sfx_moo,
     "thunder": sfx_thunder,
+    # Three birds rather than one: a single phrase repeating from the same
+    # wood is the fastest way to make a soundscape feel canned.
+    "bird1": lambda: sfx_bird(1),
+    "bird2": lambda: sfx_bird(2),
+    "bird3": lambda: sfx_bird(3),
+    "frog": sfx_frog,
+    "owl": sfx_owl,
+    "caw": sfx_caw,
     "step1": lambda: _footstep(201),
     "step2": lambda: _footstep(202),
     "step3": lambda: _footstep(203),
@@ -423,6 +544,9 @@ AMBIENCE = {
     "amb_night": amb_crickets,
     "amb_wind": amb_wind,
     "amb_rain": amb_rain,
+    # These two are mixed by where the player is standing, not by the clock.
+    "amb_water": amb_water,
+    "amb_leaves": amb_leaves,
 }
 
 MUSIC = {
@@ -435,4 +559,4 @@ MUSIC = {
 ALL = {**SFX, **AMBIENCE, **MUSIC}
 
 # Bumping this regenerates the cache on the next launch.
-BANK_VERSION = 1
+BANK_VERSION = 2

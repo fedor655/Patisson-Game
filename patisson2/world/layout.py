@@ -40,3 +40,21 @@ def building_pads():
     for name, (w, d, _door) in BUILDING_SHAPES.items():
         x, y, _h = LAYOUT[name]
         yield x, y, max(w, d) * 0.62, 4.0
+
+
+def indoors_at(x: float, y: float) -> str | None:
+    """Which building the point is inside, if any.
+
+    Buildings are rotated, so the test is done in each one's own frame — the
+    same transform the props use to put furniture in place.
+    """
+    import math
+    for name, (w, d, _door) in BUILDING_SHAPES.items():
+        bx, by, bh = LAYOUT[name]
+        a = math.radians(-bh)
+        dx, dy = x - bx, y - by
+        lx = dx * math.cos(a) - dy * math.sin(a)
+        ly = dx * math.sin(a) + dy * math.cos(a)
+        if abs(lx) < w / 2 - 0.2 and abs(ly) < d / 2 - 0.2:
+            return name
+    return None

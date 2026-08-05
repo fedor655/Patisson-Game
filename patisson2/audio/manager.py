@@ -20,7 +20,8 @@ CACHE_ROOT = Path.home() / ".patisson2" / "audio"
 
 # Sounds that can legitimately overlap need more than one voice.
 POOLED = {"step1": 3, "step2": 3, "step3": 3, "step4": 3,
-          "cluck": 2, "coin": 2, "click": 2, "splash": 2}
+          "cluck": 2, "coin": 2, "click": 2, "splash": 2,
+          "bird1": 2, "bird2": 2, "bird3": 2, "frog": 2}
 
 MUSIC_FOR_HOUR = (
     (5.0, "music_morning"),
@@ -201,7 +202,7 @@ class AudioManager:
 
     def update(self, dt: float, *, hour: float, is_night: bool, weather: str,
                indoors: bool = False, moving: float = 0.0, on_ground: bool = True,
-               paused: bool = False):
+               paused: bool = False, places: dict | None = None):
         if not self.enabled:
             return
 
@@ -238,6 +239,11 @@ class AudioManager:
                 self._amb_target["amb_day"] = 0.0 if raining else 0.7
             if raining:
                 self._amb_target["amb_rain"] = 0.95
+            # Place-based layers: the pond and the trees are mixed by where the
+            # player is standing, so their targets come from outside.
+            for name, level in (places or {}).items():
+                if name in self._amb_target:
+                    self._amb_target[name] = max(0.0, min(1.0, level))
 
         for name, snd in self.ambience.items():
             level = self._amb_level[name]
@@ -255,8 +261,10 @@ class AudioManager:
         # --- occasional animal noises ---
         self._critter_timer -= dt
         if self._critter_timer <= 0.0 and not paused:
-            self._critter_timer = self.rng.uniform(7.0, 18.0)
-            return "critter"
+            # Faster than it used to be because most ticks now find nothing
+            # suitable nearby and stay silent.
+            self._critter_timer = self.rng.uniform(5.0, 13.0)
+            return "critter" if not indoors else None
         return None
 
     def stop_all(self):

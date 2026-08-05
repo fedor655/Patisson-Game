@@ -65,6 +65,9 @@ class Props:
         self.dynamic = world.root.attachNewNode("dynamic")
         self.animals: list = []
         self.lanterns: list = []
+        # Trees are flattened into tiles below, so their positions would be
+        # lost. The soundscape needs them: birdsong comes out of a real tree.
+        self.trees: list[tuple[float, float, float]] = []
         self.rng = random.Random(world.cfg.seed)
 
         pipeline.apply_scene_shader(self.root, micro_detail=0.10)
@@ -215,9 +218,15 @@ class Props:
                 continue
             kind = r.choices(["tree_oak", "tree_oak2", "tree_birch", "tree_pine"],
                              weights=[3, 3, 2, 2])[0]
+            # Draw in the same order as before — heading, then scale — so the
+            # woodland comes out identical to every previous build.
+            heading = r.uniform(0, 360)
+            scale = r.uniform(0.8, 1.35)
             place(self.foliage, kind, (x, y, self.ground(x, y) - 0.1),
-                  r.uniform(0, 360), r.uniform(0.8, 1.35))
+                  heading, scale)
             self.world.blockers.add_post(x, y, 0.40, top=2.6)
+            # Sing from up in the canopy, not from the trunk.
+            self.trees.append((x, y, self.ground(x, y) + 4.2 * scale))
             placed += 1
 
         for _ in range(90):

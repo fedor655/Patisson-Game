@@ -103,6 +103,44 @@ def run() -> int:
         app.livestock.collect(state)
     check("живность", livestock_round)
 
+    # --- soundscape -------------------------------------------------------
+    def soundscape_round():
+        scape = app.soundscape
+        assert scape.trees, "ни одного дерева не записано"
+        px, py = scape.pond_centre
+        near = scape.beds(px, py)
+        far = scape.beds(px + 400.0, py + 400.0)
+        assert near["amb_water"] > far["amb_water"], "пруд не громче вблизи"
+        assert scape.beds(px, py, indoors=True)["amb_water"] == 0.0
+        heard = set()
+        for hour in (2.0, 8.0, 13.0, 19.5, 23.0):
+            for _ in range(60):
+                got = scape.pick(px, py, hour, 0, "clear")
+                if got:
+                    name, pos, falloff, volume = got
+                    assert falloff > 0.0 and 0.0 < volume <= 1.0
+                    assert len(pos) == 3
+                    heard.add(name)
+        assert heard, "за целые сутки не раздалось ни звука"
+    check("звуки природы", soundscape_round)
+
+    def crow_round():
+        heard = []
+        app.pests.caw = lambda pos: heard.append(pos)
+        plot = app.farm.plots[1]
+        plot.crop, plot.progress = "patisson", 1.0
+        app.pests.timer = 0.0
+        app.pests._spawn_crow()
+        assert app.pests.crows, "ворона не появилась"
+        far = Vec3(500.0, 500.0, 0.0)          # out of scaring range
+        for _ in range(400):
+            app.pests.update(0.05, far, False)
+            if heard:
+                break
+        assert heard, "ворона села молча"
+        app.pests.caw = app._crow_caw
+    check("ворона каркает", crow_round)
+
     # --- panels and screens ----------------------------------------------
     for name, opener in (("лавка", app.toggle_shop), ("котёл", app.toggle_kitchen),
                          ("журнал", app.toggle_journal)):
