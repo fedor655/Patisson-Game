@@ -71,7 +71,15 @@ class AudioManager:
         mgr.setConcurrentSoundLimit(32)
 
         self.dir = CACHE_ROOT / str(bank.BANK_VERSION)
-        fresh = self._ensure_cache()
+        # Sound is a nicety; a home directory that cannot be written to is not
+        # a reason to refuse to start the game. An unwritable cache used to
+        # raise straight out of the constructor and take the launch with it.
+        try:
+            fresh = self._ensure_cache()
+        except OSError as exc:
+            print(f"[audio] нет кэша звуков ({exc}); играем без звука", flush=True)
+            self.enabled = False
+            return
         self._load_effects()
         self._load_ambience()
         if fresh:

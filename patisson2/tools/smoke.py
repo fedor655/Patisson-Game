@@ -13,6 +13,7 @@ import os
 import random
 import sys
 import traceback
+from pathlib import Path
 
 from panda3d.core import Vec3
 
@@ -504,6 +505,37 @@ def run() -> int:
             path.unlink(missing_ok=True)
         assert describe(3) == "пусто", "удалённый слот описан неверно"
     check("битые сохранения", broken_saves)
+
+    def unwritable_home():
+        """A disk that will not take the save must say so, not crash.
+
+        Pressing F5 is the moment a player is trying hardest to protect their
+        game; a full disk or a locked-down profile used to answer with a
+        traceback. Autosave was already guarded, manual save was not.
+        """
+        from .. import settings as us
+        from ..game import state as st_mod
+
+        blocker = Path(os.environ.get("TEMP", ".")) / "patisson_smoke_blocker"
+        blocker.write_text("not a directory", encoding="utf-8")
+        keep = (st_mod.SAVE_DIR, st_mod.SAVE_PATH, us.SETTINGS_PATH)
+        try:
+            st_mod.SAVE_DIR = blocker / "sub"
+            st_mod.SAVE_PATH = st_mod.SAVE_DIR / "save.json"
+            us.SETTINGS_PATH = blocker / "sub" / "settings.json"
+            st.notifications.clear()
+            app.on_save()                      # must not raise
+            said = " ".join(text for text, _t in st.notifications)
+            assert "Не удалось сохранить" in said, \
+                f"F5 не пожаловался на отказ диска: {said!r}"
+            app.autosave()                     # must not raise either
+            us.save(dict(us.DEFAULTS))         # settings are a convenience
+            assert st_mod.describe(1) in ("пусто", "повреждено")
+        finally:
+            st_mod.SAVE_DIR, st_mod.SAVE_PATH, us.SETTINGS_PATH = keep
+            blocker.unlink(missing_ok=True)
+        app.on_save()                          # and works again afterwards
+    check("диск не пишется", unwritable_home)
 
     check("сохранение", app.on_save)
     check("автосохранение", app.autosave)

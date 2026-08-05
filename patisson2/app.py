@@ -727,7 +727,7 @@ class PatissonApp(ShowBase):
                          livestock=self.livestock, pests=self.pests,
                          tutorial=self.tutorial, slot=slot,
                          villagers=self.villagers,
-                       weather=self.weather_state)
+                         weather=self.weather_state)
 
     def autosave(self, reason: str = ""):
         """Quiet, frequent, and always to its own slot — never over a manual one."""
@@ -742,7 +742,15 @@ class PatissonApp(ShowBase):
             self.state.notify(f"Автосохранение ({reason})", 2.5)
 
     def on_save(self):
-        path = self.write_save(self.save_slot)
+        # A disk that is full or a home directory that cannot be written to
+        # must produce a message, not a crash on the key the player pressed
+        # precisely to protect their game.
+        try:
+            path = self.write_save(self.save_slot)
+        except OSError as exc:
+            self.sound("error", 0.6)
+            self.state.notify(f"Не удалось сохранить: {exc.strerror or exc}", 5.0)
+            return
         self.state.notify(f"Сохранено: {path.name}")
 
     def on_load(self):
