@@ -105,6 +105,38 @@ def run() -> int:
         app.livestock.collect(state)
     check("живность", livestock_round)
 
+    def feeding_pays_the_same():
+        """One feeding must yield the same whether you hover or walk away.
+
+        Feed used to drain while a finished product stood waiting, so a player
+        who fed the barn and went fishing came back to half the eggs the wheat
+        had paid for — and nothing in the game said so.
+        """
+        from ..game.livestock import SPECIES
+
+        def run(kind, collect_every_tick):
+            state = next(s for _a, s in app.livestock.animals() if s.kind == kind)
+            state.fed = SPECIES[kind][3]
+            state.progress, state.ready = 0.0, False
+            got, idle = 0, 0.0
+            step = app.cfg.game.day_length / 500.0
+            for _ in range(3000):
+                app.livestock.update(step)
+                if state.ready and (collect_every_tick or idle >= 1.0):
+                    app.livestock.collect(state)
+                    got, idle = got + 1, 0.0
+                elif state.ready:
+                    idle += step / app.cfg.game.day_length
+            return got
+
+        for kind in ("chicken", "cow"):
+            eager, lazy = run(kind, True), run(kind, False)
+            assert eager == lazy, (
+                f"{kind}: у грядки {eager} шт, а если уйти — {lazy}; "
+                "корм сгорает, пока продукт ждёт")
+            assert eager >= 1, f"{kind}: кормёжка не дала ничего"
+    check("кормёжка не пропадает", feeding_pays_the_same)
+
     # --- villagers --------------------------------------------------------
     def dialogue_round():
         from ..game.dialogue import GREETINGS, TOPICS

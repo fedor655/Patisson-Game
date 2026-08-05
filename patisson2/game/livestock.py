@@ -94,13 +94,17 @@ class Livestock:
     def update(self, dt: float) -> None:
         day_frac = dt / self.day_length
         for animal, state in self.animals():
-            if state.fed > 0.0:
+            # Feed is only consumed while the animal is working towards its
+            # next product. It used to drain while one stood waiting to be
+            # collected, so a player who fed the barn and spent the day
+            # fishing came back to half the eggs the wheat had paid for —
+            # punished for not standing next to the coop.
+            if state.fed > 0.0 and not state.ready:
                 state.fed = max(0.0, state.fed - day_frac)
-                if not state.ready:
-                    period = SPECIES[state.kind][1]
-                    state.progress = min(1.0, state.progress + day_frac / period)
-                    if state.progress >= 1.0:
-                        state.ready = True
+                period = SPECIES[state.kind][1]
+                state.progress = min(1.0, state.progress + day_frac / period)
+                if state.progress >= 1.0:
+                    state.ready = True
             self._sync_marker(animal, state)
 
     def _sync_marker(self, animal, state: AnimalState) -> None:
