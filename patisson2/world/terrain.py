@@ -7,7 +7,6 @@ middle where the player actually walks.
 
 from __future__ import annotations
 
-import math
 
 import numpy as np
 from panda3d.core import (

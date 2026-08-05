@@ -6,7 +6,7 @@ from pathlib import Path
 
 from direct.gui.DirectGui import DirectButton, DirectFrame
 from direct.gui.OnscreenText import OnscreenText
-from panda3d.core import CardMaker, NodePath, TextNode, TransparencyAttrib, Vec4
+from panda3d.core import CardMaker, TextNode, TransparencyAttrib
 
 from ..game.farming import CROPS, CROP_ORDER
 from ..game.state import (ACHIEVEMENTS, TOOL_NAMES, TOOLS, shop_entries)

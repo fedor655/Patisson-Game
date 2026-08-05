@@ -17,13 +17,13 @@ from panda3d.core import (
 
 from .audio.manager import AudioManager
 from . import settings as user_settings
-from .input import ACTIONS, Bindings, Gamepad, PAD_BUTTONS
+from .input import ACTIONS, Bindings, Gamepad, MOVEMENT, PAD_BUTTONS
 from .config import Config
 from .engine.pipeline import RenderPipeline
 from .game.cooking import POT_POSITION, Kitchen, item_name
 from .game.dialogue import Talk
 from .game.farming import CROPS, CROP_ORDER, Farm
-from .game.fishing import BITE, IDLE, REELING, WAITING, Fishing
+from .game.fishing import BITE, REELING, Fishing
 from .game.livestock import FEED_ITEM, SPECIES, Livestock
 from .game.npc import Villagers
 from .game.pests import Pests
@@ -162,7 +162,7 @@ class PatissonApp(ShowBase):
             key = self.bindings.key_for(action)
             if not key:
                 continue
-            if action in ("forward", "back", "left", "right", "sprint"):
+            if action in MOVEMENT:
                 self.accept(key, self._set_key, [action, True])
                 self.accept(f"{key}-up", self._set_key, [action, False])
             else:
@@ -175,8 +175,14 @@ class PatissonApp(ShowBase):
                 self.ignore(key)
                 self.ignore(f"{key}-up")
 
-    def _fire_action(self, action: str):
-        handler = {
+    def action_handlers(self) -> dict:
+        """Every non-movement action, and what it does.
+
+        Exposed so a test can check it against ACTIONS: an action listed on the
+        controls screen with nothing behind it would take a key away from the
+        actions that work and then do nothing at all when pressed.
+        """
+        return {
             "jump": lambda: None,          # movement handled by _set_key
             "interact": self.on_interact,
             "secondary": self.on_secondary,
@@ -190,7 +196,10 @@ class PatissonApp(ShowBase):
             "photo": self.toggle_photo_mode,
             "save": self.on_save,
             "load": self.on_load,
-        }.get(action)
+        }
+
+    def _fire_action(self, action: str):
+        handler = self.action_handlers().get(action)
         if handler is not None:
             handler()
 

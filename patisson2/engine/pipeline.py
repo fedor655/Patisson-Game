@@ -9,7 +9,6 @@ bloom, screen-space god rays, ACES tonemap, grade, FXAA.
 
 from __future__ import annotations
 
-import math
 
 from direct.filter.FilterManager import FilterManager
 from panda3d.core import (

@@ -10,6 +10,7 @@ one line that was broken. Compiling is not evidence that a game runs.
 from __future__ import annotations
 
 import os
+import random
 import sys
 import traceback
 
@@ -211,6 +212,32 @@ def run() -> int:
     check("пресеты качества", presets)
     check("переназначение", lambda: (app.rebind("interact", "r"),
                                      app.reset_bindings()))
+
+    def bindings_cover_actions():
+        """Every listed action must move the player or run a handler, and no
+        two actions may end up sharing a key however you rebind them."""
+        from ..input import ACTIONS, DEFAULTS, MOVEMENT, RESERVED
+        handled = set(app.action_handlers()) | set(MOVEMENT)
+        listed = {a for a, _l, _k, _r in ACTIONS}
+        missing = sorted(listed - handled)
+        assert not missing, f"действия без обработчика: {missing}"
+
+        rng = random.Random(4)
+        pool = sorted(set(DEFAULTS.values()) | set("yuiopnmb"))
+        rebindable = [a for a, _l, _k, r in ACTIONS if r]
+        for _ in range(200):
+            app.bindings.rebind(rng.choice(rebindable), rng.choice(pool))
+            keys = app.bindings.keys
+            blank = [a for a in DEFAULTS if not keys.get(a)]
+            assert not blank, f"действие осталось без клавиши: {blank}"
+            seen = {}
+            for act, key in keys.items():
+                assert key not in seen, f"{act} и {seen[key]} на одной клавише {key}"
+                seen[key] = act
+        assert app.bindings.rebind(rebindable[0], sorted(RESERVED)[0]), \
+            "зарезервированную клавишу дали занять"
+        app.reset_bindings()
+    check("действия и клавиши", bindings_cover_actions)
     check("пауза", lambda: (app.on_escape(), app.taskMgr.step(), app.on_escape()))
 
     def measure_buttons(buttons, where):

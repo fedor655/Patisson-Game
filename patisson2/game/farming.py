@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import random
 
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from panda3d.core import NodePath, Vec3
 

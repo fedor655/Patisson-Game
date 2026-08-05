@@ -7,7 +7,6 @@ Output is mono float32 in [-1, 1] at :data:`SR`, written out as 16-bit WAV.
 from __future__ import annotations
 
 import math
-import struct
 import wave
 from pathlib import Path
 
@@ -212,10 +211,6 @@ def reverb(sig: np.ndarray, room: float = 0.6, mix: float = 0.28,
 
 def soft_clip(sig: np.ndarray, drive: float = 1.0) -> np.ndarray:
     return np.tanh(sig * drive).astype(np.float32)
-
-
-def pan_stub(sig: np.ndarray) -> np.ndarray:
-    return sig
 
 
 def mix(*sigs: np.ndarray, gains: tuple[float, ...] | None = None) -> np.ndarray:

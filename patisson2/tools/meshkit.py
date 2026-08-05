@@ -10,7 +10,6 @@ Y-up on the way out, so panda3d-gltf's own conversion lands them back Z-up.
 
 from __future__ import annotations
 
-import base64
 import json
 import math
 import struct

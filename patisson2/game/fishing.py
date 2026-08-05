@@ -8,7 +8,7 @@ sweeping marker that has to be stopped inside a target band several times over.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

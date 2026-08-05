@@ -7,7 +7,7 @@ import random
 from pathlib import Path
 
 import gltf
-from panda3d.core import NodePath, Vec3, Vec4
+from panda3d.core import NodePath, Vec3
 
 from ..engine.pipeline import MASK_SHADOW
 

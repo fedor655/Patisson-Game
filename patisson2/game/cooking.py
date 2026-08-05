@@ -6,7 +6,7 @@ pie made from one is worth 320. Dishes also restore stamina when eaten.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .farming import CROPS
 from .livestock import PRODUCT_NAMES, PRODUCT_PRICE
@@ -36,8 +36,6 @@ RECIPES: tuple[Recipe, ...] = (
     Recipe("pie", "Тыквенный пирог", {"pumpkin": 1, "wheat": 2, "egg": 1, "milk": 1},
            320, 60.0, "Осенний деликатес."),
 )
-
-RECIPE_BY_KEY = {r.key: r for r in RECIPES}
 
 # Everything the shop and the stall need to know how to price and name.
 DISH_PRICE = {r.key: r.sell_price for r in RECIPES}
