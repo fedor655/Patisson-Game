@@ -28,6 +28,7 @@ from .game.player import Player
 from .game.state import GameState, load_game, save_game, shop_entries
 from .ui.hud import HUD
 from .ui.menu import MainMenu
+from .ui.worldmap import WorldMap
 from .world.daynight import DayNightCycle
 from .world.props import Props, plot_positions
 from .world.weather import Precipitation
@@ -107,6 +108,7 @@ class PatissonApp(ShowBase):
         self.paused = False
         self.fishing = Fishing(random.Random(self.cfg.world.seed ^ 0xF15))
         self.photo_mode = False
+        self.worldmap = WorldMap(self, self.hud, self.world, self.cfg.world)
         self.mode = "menu"             # menu | playing
         self.menu = MainMenu(self, self.hud)
         self._setup_input()
@@ -148,6 +150,7 @@ class PatissonApp(ShowBase):
         self.accept("=", self.nudge_volume, [0.1])
         self.accept("m", self.toggle_mute)
         self.accept("k", self.toggle_kitchen)
+        self.accept("tab", self.toggle_map)
         self.accept("enter", self.on_confirm)
         for i in range(1, 6):
             self.accept(str(i), self.select_tool, [i - 1])
@@ -156,6 +159,10 @@ class PatissonApp(ShowBase):
         self.keys[action] = value
 
     def _on_arrow(self, action, value):
+        if value and self.worldmap.visible:
+            self.worldmap.move(-1 if action == "forward" else 1)
+            self.sound("click", 0.35)
+            return
         if value and self.hud.panel_mode in ("shop", "kitchen"):
             self.panel_cursor(-1 if action == "forward" else 1)
             return
@@ -187,6 +194,7 @@ class PatissonApp(ShowBase):
         self.paused = False
         self.hud.close_panel()
         self.hud.hide_dialogue()
+        self.worldmap.close()
         self.hud.root.hide()
         self.menu.show()
         self._grab_mouse(False)
@@ -270,6 +278,40 @@ class PatissonApp(ShowBase):
             self.state.notify("Звук включён", 1.6)
         self.hud.refresh_panel()
 
+    def toggle_map(self):
+        if self.mode == "menu" or self.hud.panel_mode:
+            return
+        self.sound("click", 0.5)
+        opened = self.worldmap.toggle()
+        # The HUD would otherwise print prompts straight across the map.
+        if opened:
+            self.hud.root.hide()
+        elif self.hud.visible:
+            self.hud.root.show()
+        self._grab_mouse(not opened)
+
+    def travel_to_selected(self):
+        """Walk there off-screen: the time it would have taken still passes."""
+        label, (tx, ty), _kind = self.worldmap.selected()
+        seconds = self.worldmap.travel_cost(self.player.pos)
+        if seconds < 2.0:
+            self.sound("error", 0.5)
+            self.state.notify("Вы уже здесь")
+            return
+        self.cycle.total_time += seconds
+        self.player.pos.x, self.player.pos.y = tx, ty
+        self.player.pos.z = self.world.height_at(tx, ty)
+        self.player.vel.set(0, 0, 0)
+        # Arriving costs stamina, so travelling is a convenience, not a free lunch.
+        self.player.stamina = max(0.0, self.player.stamina - seconds * 0.55)
+        self.worldmap.close()
+        if self.hud.visible:
+            self.hud.root.show()
+        self._grab_mouse(True)
+        self.sound("click", 0.7)
+        minutes = int(seconds / self.cfg.game.day_length * 24 * 60)
+        self.state.notify(f"{label}: дорога заняла {max(1, minutes)} мин")
+
     def sound(self, name: str, volume: float = 1.0, pitch: float = 0.0):
         if self.audio:
             self.audio.play(name, volume, pitch)
@@ -287,6 +329,12 @@ class PatissonApp(ShowBase):
 
     def on_escape(self):
         self.sound("click", 0.45)
+        if self.worldmap.visible:
+            self.worldmap.close()
+            if self.hud.visible:
+                self.hud.root.show()
+            self._grab_mouse(True)
+            return
         if self.mode == "menu":
             self.menu.back()
             return
@@ -372,6 +420,9 @@ class PatissonApp(ShowBase):
         self.hud.refresh_panel()
 
     def on_confirm(self):
+        if self.worldmap.visible:
+            self.travel_to_selected()
+            return
         if self.hud.panel_mode == "kitchen":
             self.on_cook()
             return
@@ -815,7 +866,8 @@ class PatissonApp(ShowBase):
             self._mouse_look()
 
         in_menu = self.mode == "menu"
-        blocked = in_menu or self.paused or self.hud.panel_mode is not None
+        blocked = (in_menu or self.paused or self.worldmap.visible
+                   or self.hud.panel_mode is not None)
         if not blocked:
             self.cycle.advance(dt)
             self._update_weather(dt)
@@ -891,6 +943,7 @@ class PatissonApp(ShowBase):
                     and self.rng.random() < dt * 0.035:
                 self.audio.play("thunder", 0.45)
 
+        self.worldmap.update(self.player.pos, self.player.heading, self.villagers)
         st.update_notifications(dt)
         if not in_menu:
             prompt, tip = self.context()

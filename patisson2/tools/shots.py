@@ -238,6 +238,13 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     shot("16-kitchen.png", hour=13.0)
     app.hud.close_panel()
 
+    app.toggle_map()
+    app.worldmap.move(6)          # put the cursor on the pond
+    settle(3)
+    shot("17b-map.png", hour=10.0)
+    app.toggle_map()
+    settle(2)
+
     app.hud.open_panel("journal")
     st.record("harvest", "patisson", 3)
     st.unlock("first_seed")
