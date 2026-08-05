@@ -24,7 +24,7 @@ from .game.fishing import BITE, IDLE, REELING, WAITING, Fishing
 from .game.livestock import FEED_ITEM, SPECIES, Livestock
 from .game.npc import Villagers
 from .game.player import Player
-from .game.state import GameState, SHOP_ITEMS, load_game, save_game
+from .game.state import GameState, load_game, save_game, shop_entries
 from .ui.hud import HUD
 from .ui.menu import MainMenu
 from .world.daynight import DayNightCycle
@@ -586,10 +586,16 @@ class PatissonApp(ShowBase):
 
         if tool == "hoe":
             if plot is None and target is not None:
-                new = self.farm.till(target.x, target.y)
-                if new is not None:
+                from .world.layout import PLOT_SPACING
+                dug = 0
+                for ox, oy in st.upgrades.till_pattern:
+                    if self.farm.till(target.x + ox * PLOT_SPACING,
+                                      target.y + oy * PLOT_SPACING) is not None:
+                        dug += 1
+                if dug:
                     self.sound("dig", 0.9)
-                    st.notify("Грядка вскопана")
+                    st.notify("Грядка вскопана" if dug == 1
+                              else f"Вскопано грядок: {dug}")
                 else:
                     self.sound("error", 0.6)
                     st.notify("Здесь копать нельзя")
@@ -602,10 +608,24 @@ class PatissonApp(ShowBase):
                 self.sound("well" if self._near_well() else "splash", 0.7)
                 st.notify("Лейка полна")
             elif plot is not None and st.water >= 1.0:
-                if self.farm.water_plot(plot):
-                    st.water = max(0.0, st.water - 1.0)
+                targets = [plot]
+                spread = st.upgrades.water_radius
+                if spread > 0.0:
+                    targets = [q for q in self.farm.plots
+                               if (q.x - plot.x) ** 2 + (q.y - plot.y) ** 2
+                               < spread * spread]
+                poured = 0
+                for q in targets:
+                    if st.water < 1.0:
+                        break
+                    if self.farm.water_plot(q):
+                        st.water = max(0.0, st.water - 1.0)
+                        poured += 1
+                if poured:
                     self.sound("water", 0.8)
-                else:
+                    if poured > 1:
+                        st.notify(f"Полито грядок: {poured}")
+                elif not poured:
                     self.sound("error", 0.5)
                     st.notify("Грядка уже полита")
             elif plot is not None:
@@ -629,7 +649,7 @@ class PatissonApp(ShowBase):
 
         elif tool == "rod":
             if self._near_water():
-                self.fishing.cast(st.upgrades.enchanted_rod)
+                self.fishing.cast(st.upgrades)
                 self.sound("cast", 0.8)
             else:
                 self.sound("error", 0.6)
@@ -637,7 +657,7 @@ class PatissonApp(ShowBase):
 
         elif tool == "basket":
             if plot is not None and plot.ripe:
-                result = self.farm.harvest(plot)
+                result = self.farm.harvest(plot, st.upgrades.harvest_bonus)
                 if result:
                     key, count = result
                     self.sound("harvest", 0.9)
@@ -671,7 +691,7 @@ class PatissonApp(ShowBase):
     def _fishing_input(self):
         st = self.state
         event = self.fishing.strike(self.cycle.hour, self.cycle.season,
-                                    0.55 if st.upgrades.enchanted_rod else 0.0)
+                                    st.upgrades.luck)
         if event == "early":
             self.sound("error", 0.5)
             st.notify("Рано подсёк — леска пуста")
@@ -714,7 +734,7 @@ class PatissonApp(ShowBase):
     def _update_fishing(self, dt: float):
         if not self.fishing.active:
             return
-        event = self.fishing.update(dt, self.state.upgrades.enchanted_rod)
+        event = self.fishing.update(dt, self.state.upgrades)
         if event == "bite":
             self.sound("splash", 0.5)
         elif event == "missed_bite":

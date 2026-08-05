@@ -9,7 +9,7 @@ from direct.gui.OnscreenText import OnscreenText
 from panda3d.core import CardMaker, NodePath, TextNode, TransparencyAttrib, Vec4
 
 from ..game.farming import CROPS, CROP_ORDER
-from ..game.state import ACHIEVEMENTS, SHOP_ITEMS, TOOL_NAMES, TOOLS
+from ..game.state import (ACHIEVEMENTS, TOOL_NAMES, TOOLS, shop_entries)
 
 # Panda's built-in font has no Cyrillic; fall back through the usual suspects.
 FONT_CANDIDATES = [
@@ -219,7 +219,7 @@ class HUD:
         if self.panel_mode == "shop":
             self.panel_title.setText("Лавка")
             lines = []
-            for i, (key, name, price, desc) in enumerate(SHOP_ITEMS):
+            for i, (key, name, price, desc) in enumerate(shop_entries(self.state.upgrades)):
                 owned = ""
                 if key in ("golden_can", "enchanted_rod", "lantern_oil"):
                     if getattr(self.state.upgrades, key):
@@ -318,12 +318,12 @@ class HUD:
             self.panel_hint.setText("")
 
     def move_shop_cursor(self, delta: int):
-        self.shop_index = (self.shop_index + delta) % len(SHOP_ITEMS)
+        self.shop_index = (self.shop_index + delta) % len(shop_entries(self.state.upgrades))
         self.refresh_panel()
 
     @property
     def shop_key(self) -> str:
-        return SHOP_ITEMS[self.shop_index][0]
+        return shop_entries(self.state.upgrades)[self.shop_index][0]
 
     # ---------------------------------------------------------------- update
 

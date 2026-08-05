@@ -26,14 +26,97 @@ FISH_PRICE = 14
 
 @dataclass
 class Upgrades:
-    golden_can: bool = False        # holds more water
-    enchanted_rod: bool = False     # fish bite sooner
+    """Tool tiers, 1 to 3. Every level changes how a tool behaves, not just a
+    number: the hoe works a wider patch, the can waters neighbours, the rod
+    changes the odds at the pond, the basket changes what a harvest yields."""
+
+    hoe: int = 1
+    can: int = 1
+    rod: int = 1
+    basket: int = 1
     fertilizer: bool = False        # unlocks feeding plots
     lantern_oil: bool = False       # brighter lanterns at night
 
+    # --- watering can ---
     @property
     def can_capacity(self) -> float:
-        return 20.0 if self.golden_can else 8.0
+        return (8.0, 18.0, 34.0)[self.can - 1]
+
+    @property
+    def water_radius(self) -> float:
+        """Plots within this distance of the target get watered too."""
+        return (0.0, 0.0, 2.4)[self.can - 1]
+
+    # --- hoe ---
+    @property
+    def till_pattern(self) -> tuple:
+        """Offsets, in plot spacings, tilled in one swing."""
+        if self.hoe >= 3:
+            return tuple((i, j) for i in (-1, 0, 1) for j in (-1, 0, 1))
+        if self.hoe == 2:
+            return ((-1, 0), (0, 0), (1, 0))
+        return ((0, 0),)
+
+    # --- rod ---
+    @property
+    def bite_speed(self) -> float:
+        """Multiplier on how long the fish takes to bite."""
+        return (1.0, 0.68, 0.45)[self.rod - 1]
+
+    @property
+    def strike_window(self) -> float:
+        return (0.95, 1.15, 1.40)[self.rod - 1]
+
+    @property
+    def reel_ease(self) -> float:
+        """Multiplier on the reel marker's speed; lower is easier."""
+        return (1.0, 0.90, 0.78)[self.rod - 1]
+
+    @property
+    def luck(self) -> float:
+        return (0.0, 0.25, 0.60)[self.rod - 1]
+
+    # --- basket ---
+    @property
+    def harvest_bonus(self) -> int:
+        return (0, 1, 2)[self.basket - 1]
+
+    @property
+    def sell_multiplier(self) -> float:
+        return (1.0, 1.0, 1.25)[self.basket - 1]
+
+    # Kept so old saves still load.
+    @property
+    def golden_can(self) -> bool:
+        return self.can >= 2
+
+    @property
+    def enchanted_rod(self) -> bool:
+        return self.rod >= 3
+
+
+# Tool upgrades: key -> per-level (display name, price, what it changes).
+TOOL_TIERS = {
+    "hoe": [
+        ("Стальная мотыга", 180, "Вскапывает три грядки в ряд за раз."),
+        ("Мотыга-веер", 520, "Вскапывает участок 3×3 за раз."),
+    ],
+    "can": [
+        ("Золотая лейка", 220, "Больше воды: 18 вместо 8."),
+        ("Лейка-дождевик", 600, "34 воды и поливает соседние грядки."),
+    ],
+    "rod": [
+        ("Крепкая удочка", 200, "Клюёт быстрее, окно подсечки шире."),
+        ("Зачарованная удочка", 540, "Метка медленнее, редкая рыба чаще."),
+    ],
+    "basket": [
+        ("Плетёная корзина", 160, "На один плод больше с каждой грядки."),
+        ("Корзина коробейника", 480, "Ещё плод и +25% к цене продажи."),
+    ],
+}
+
+TOOL_LABELS = {"hoe": "мотыга", "can": "лейка", "rod": "удочка",
+               "basket": "корзина"}
 
 
 SHOP_ITEMS = [
@@ -43,10 +126,19 @@ SHOP_ITEMS = [
     ("seed_wheat", "Семена пшеницы", 3, "Три колоса с грядки."),
     ("seed_pumpkin", "Семена тыквы", 16, "Осенняя культура. Дорогая."),
     ("fertilizer", "Удобрение", 6, "Питание для растения на грядке."),
-    ("golden_can", "Золотая лейка", 220, "Втрое больше воды за один поход."),
-    ("enchanted_rod", "Зачарованная удочка", 260, "Рыба клюёт заметно быстрее."),
     ("lantern_oil", "Масло для фонарей", 140, "Фонари горят ярче ночью."),
 ]
+
+
+def shop_entries(upgrades) -> list:
+    """Consumables, then whichever tool tier each tool is up for next."""
+    entries = list(SHOP_ITEMS)
+    for key, tiers in TOOL_TIERS.items():
+        level = getattr(upgrades, key)
+        if level - 1 < len(tiers):
+            name, price, desc = tiers[level - 1]
+            entries.append((f"tool_{key}", name, price, desc))
+    return entries
 
 
 @dataclass
@@ -102,6 +194,7 @@ ACHIEVEMENTS = {
     "golden": "Поймать золотую рыбку",
     "ichthyologist": "Поймать все виды рыб",
     "well_rested": "Выспаться в своей кровати",
+    "toolmaster": "Улучшить все инструменты до предела",
 }
 
 
@@ -202,18 +295,30 @@ class GameState:
     # ---------------------------------------------------------------- shop
 
     def buy(self, key: str) -> bool:
-        for item_key, name, price, _desc in SHOP_ITEMS:
+        for item_key, name, price, _desc in shop_entries(self.upgrades):
             if item_key != key:
                 continue
             if self.coins < price:
                 self.notify("Не хватает монет")
                 return False
-            if key in ("golden_can", "enchanted_rod", "lantern_oil"):
-                if getattr(self.upgrades, key):
+            if key.startswith("tool_"):
+                tool = key[5:]
+                level = getattr(self.upgrades, tool)
+                if level - 1 >= len(TOOL_TIERS[tool]):
+                    self.notify("Улучшать больше некуда")
+                    return False
+                self.coins -= price
+                setattr(self.upgrades, tool, level + 1)
+                self.notify(f"Куплено: {name}")
+                if all(getattr(self.upgrades, t) >= 3 for t in TOOL_TIERS):
+                    self.unlock("toolmaster")
+                return True
+            if key == "lantern_oil":
+                if self.upgrades.lantern_oil:
                     self.notify("Уже куплено")
                     return False
                 self.coins -= price
-                setattr(self.upgrades, key, True)
+                self.upgrades.lantern_oil = True
                 self.notify(f"Куплено: {name}")
                 return True
             self.coins -= price
@@ -247,6 +352,7 @@ class GameState:
         elif self.fish:
             total += self.fish * FISH_PRICE
             self.fish = 0
+        total = int(round(total * mult))
         if total:
             self.coins += total
             self.notify(f"Продано на {total} монет")
@@ -320,9 +426,21 @@ class GameState:
         self.total_fish = data.get("total_fish", 0)
         self.water = data.get("water", 0.0)
         self.inventory = dict(data.get("inventory", {}))
-        for k, v in data.get("upgrades", {}).items():
-            if hasattr(self.upgrades, k):
-                setattr(self.upgrades, k, bool(v))
+        up = data.get("upgrades", {})
+        # Start from defaults: loading a save must not inherit tools bought in
+        # whatever run happened to be in memory.
+        self.upgrades = Upgrades()
+        for key in ("hoe", "can", "rod", "basket"):
+            if key in up:
+                setattr(self.upgrades, key, max(1, min(3, int(up[key]))))
+        for key in ("fertilizer", "lantern_oil"):
+            if key in up:
+                setattr(self.upgrades, key, bool(up[key]))
+        # Saves from before tools had tiers stored booleans instead.
+        if "can" not in up and up.get("golden_can"):
+            self.upgrades.can = 2
+        if "rod" not in up and up.get("enchanted_rod"):
+            self.upgrades.rod = 3
         self.achievements = set(data.get("achievements", []))
         self.play_time = data.get("play_time", 0.0)
         self.cooked = dict(data.get("cooked", {}))

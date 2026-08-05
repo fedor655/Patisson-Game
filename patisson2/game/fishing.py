@@ -134,10 +134,10 @@ class Fishing:
     def active(self) -> bool:
         return self.state.phase not in (IDLE, DONE)
 
-    def cast(self, enchanted: bool) -> None:
+    def cast(self, upgrades) -> None:
         s = self.state
         s.phase = WAITING
-        base = 1.4 if enchanted else 2.6
+        base = 2.6 * upgrades.bite_speed
         s.timer = self.rng.uniform(base * 0.55, base * 1.9)
         s.species = None
         s.pulls_done = 0
@@ -187,14 +187,14 @@ class Fishing:
             return "miss"
         return None
 
-    def update(self, dt: float, enchanted: bool) -> str | None:
+    def update(self, dt: float, upgrades) -> str | None:
         s = self.state
         if s.phase == WAITING:
             s.timer -= dt
             if s.timer <= 0.0:
                 s.phase = BITE
-                # The enchanted rod buys a more forgiving strike window.
-                s.timer = 1.35 if enchanted else 0.95
+                # Better rods buy a more forgiving strike window.
+                s.timer = upgrades.strike_window
                 s.message = "Подсекай!"
                 return "bite"
         elif s.phase == BITE:
@@ -204,7 +204,7 @@ class Fishing:
                 s.message = ""
                 return "missed_bite"
         elif s.phase == REELING:
-            speed = s.species.speed * (0.82 if enchanted else 1.0)
+            speed = s.species.speed * upgrades.reel_ease
             s.marker += s.direction * speed * dt
             if s.marker > 1.0:
                 s.marker = 2.0 - s.marker

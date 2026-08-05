@@ -148,12 +148,12 @@ class Farm:
         plot.food = min(1.0, plot.food + amount)
         return True
 
-    def harvest(self, plot: Plot) -> tuple[str, int] | None:
+    def harvest(self, plot: Plot, basket_bonus: int = 0) -> tuple[str, int] | None:
         if not plot.ripe:
             return None
         crop = CROPS[plot.crop]
         bonus = 1 if plot.health > 0.92 and plot.food > 0.6 else 0
-        count = crop.yield_count + bonus
+        count = crop.yield_count + bonus + basket_bonus
         self.harvest_log[crop.key] = self.harvest_log.get(crop.key, 0) + count
         plot.crop = None
         plot.progress = 0.0

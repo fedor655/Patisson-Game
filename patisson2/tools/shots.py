@@ -124,9 +124,9 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     from ..game.fishing import BITE, REELING
     app.player.pos.x, app.player.pos.y = cx, cy
     app.player.pos.z = gz(cx, cy)
-    app.fishing.cast(False)
+    app.fishing.cast(st.upgrades)
     for _ in range(600):
-        app.fishing.update(1 / 60.0, False)
+        app.fishing.update(1 / 60.0, st.upgrades)
         if app.fishing.state.phase == BITE:
             app.fishing.strike(8.5, 1, 0.0)
             break
