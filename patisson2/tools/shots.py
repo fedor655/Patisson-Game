@@ -217,6 +217,15 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     look_at(app.player, (0.0, 6.0, 0.4), (5.0, -5.0, gz(5.0, -5.0)))
     shot("13-rain.png", hour=13.0, weather="rain")
 
+    # Villagers give up on the routine and make for a roof.
+    app.weather = "rain"
+    for _ in range(int(50 * 60)):
+        app.villagers.update(1 / 60.0, app.cycle.hour, 0.0, None, "rain")
+    sx, sy = -13.0, -2.0
+    look_at(app.player, (sx - 1.2, sy - 0.4, gz(sx, sy) + 1.4),
+            (sx + 4.6, sy - 4.4, gz(sx + 4.6, sy - 4.4)))
+    shot("13b-shelter.png", hour=13.0, weather="rain")
+
     app.hud.open_panel("shop")
     shot("14-shop.png", hour=13.0, weather="clear")
     app.hud.close_panel()

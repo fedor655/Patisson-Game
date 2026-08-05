@@ -963,7 +963,8 @@ class PatissonApp(ShowBase):
                           cam_pos if in_menu else self.player.pos)
         self.villagers.update(dt if not blocked else 0.0, self.cycle.hour,
                               self.cycle.total_time,
-                              None if in_menu else self.player.eye)
+                              None if in_menu else self.player.eye,
+                              self.weather)
         p.update(dt, cam_pos, Vec3(cam_pos.x, cam_pos.y, cam_pos.z))
 
         if not in_menu and (23.5 <= self.cycle.hour or self.cycle.hour < 0.5):

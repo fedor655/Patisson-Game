@@ -7,6 +7,7 @@ import random
 
 from panda3d.core import Vec3
 
+from ..world.layout import LAYOUT
 from ..world.props import place
 
 # Each entry: (hour, (x, y), what they're doing)
@@ -56,6 +57,30 @@ DIALOGUE = {
 
 NAMES = {"bogdan": "Богдан", "marina": "Марина", "pyotr": "Пётр"}
 
+# Somewhere with a roof, in order of preference per villager.
+def _shelters():
+    hx, hy, _ = LAYOUT["house"]
+    bx, by, _ = LAYOUT["barn"]
+    return {
+        "bogdan": [(hx, hy, "пережидает дождь дома")],
+        "marina": [(-14.1, -2.6, "прячется под навесом лавки"),
+                   (bx, by, "пережидает дождь в амбаре")],
+        "pyotr": [(bx, by, "пережидает дождь в амбаре")],
+    }
+
+
+SHELTERS = _shelters()
+
+# Lines they use while it is coming down.
+WET_LINES = {
+    "bogdan": ["Ну и льёт. Грядки хоть поливать не надо.",
+               "Пересидим — и снова за работу."],
+    "marina": ["Под навесом хоть сухо. Товар не мокнет.",
+               "В такую погоду рыба берёт хорошо, между прочим."],
+    "pyotr": ["Куры под крышей, и я с ними.",
+              "Дождь — он земле в радость, а мне в тягость."],
+}
+
 
 # Rig dimensions, mirrored from tools/make_assets.py.
 HIP_Z = 0.86
@@ -80,6 +105,7 @@ class NPC:
         self.speed = 1.9
         self.target = Vec3(*self.schedule[0][1], 0)
         self.phase = self.rng.uniform(0, 6.28)
+        self.sheltering = False
         self.swing = 0.0             # 0 idle .. 1 full stride
         self._idle = self.rng.uniform(0, 10.0)
         self._glance = self.rng.uniform(3.0, 9.0)
@@ -123,6 +149,12 @@ class NPC:
         return best
 
     def talk(self) -> str:
+        if self.sheltering:
+            wet = WET_LINES.get(self.key)
+            if wet:
+                line = wet[self.line_index % len(wet)]
+                self.line_index += 1
+                return line
         lines = DIALOGUE[self.key]
         line = lines[self.line_index % len(lines)]
         self.line_index += 1
@@ -130,9 +162,26 @@ class NPC:
 
     # ---------------------------------------------------------------- update
 
-    def update(self, dt: float, hour: float, time: float, look_at=None):
+    def shelter(self):
+        """Where this villager goes when it rains, and what to call it."""
+        options = SHELTERS.get(self.key) or []
+        if not options:
+            return None
+        here = self.node.getPos()
+        return min(options, key=lambda s: (s[0] - here.x) ** 2 + (s[1] - here.y) ** 2)
+
+    def update(self, dt: float, hour: float, time: float, look_at=None,
+               weather: str = "clear"):
         _h, (tx, ty), activity = self.destination(hour)
         self.activity = activity
+
+        # Rain and snow override the routine: head for a roof and stay put.
+        wet = weather in ("rain", "snow")
+        spot = self.shelter() if wet else None
+        if spot is not None:
+            tx, ty, activity = spot
+            self.activity = activity
+        self.sheltering = wet
         p = self.node.getPos()
         dx, dy = tx - p.x, ty - p.y
         dist = math.hypot(dx, dy)
@@ -140,7 +189,9 @@ class NPC:
 
         step = 0.0
         if moving:
-            step = min(self.speed * dt, dist)
+            # Nobody dawdles in the rain.
+            speed = self.speed * (1.35 if self.sheltering else 1.0)
+            step = min(speed * dt, dist)
             p.x += dx / dist * step
             p.y += dy / dist * step
             want = math.degrees(math.atan2(dy, dx)) - 90.0
@@ -174,15 +225,18 @@ class NPC:
         parts["leg_l"].setP(sin_p * leg)
         parts["leg_r"].setP(-sin_p * leg)
         # Arms counter-swing, with a small rest angle so they never clip in.
-        parts["arm_l"].setHpr(0, -sin_p * arm, -6.0 - 4.0 * s)
-        parts["arm_r"].setHpr(0, sin_p * arm, 6.0 + 4.0 * s)
+        # Arms tuck in against the body when they are getting wet.
+        tuck = 9.0 if self.sheltering else 0.0
+        parts["arm_l"].setHpr(0, -sin_p * arm, -6.0 - 4.0 * s + tuck)
+        parts["arm_r"].setHpr(0, sin_p * arm, 6.0 + 4.0 * s - tuck)
 
         # Hips lift on each step and roll into it; standing still gets a breath.
         self._idle += dt
         breathe = math.sin(self._idle * 1.5) * 0.006 * (1.0 - s)
         parts["hip"].setZ(HIP_Z + abs(sin_p) * 0.030 * s + breathe)
         parts["hip"].setR(-cos_2p * 2.6 * s)
-        parts["hip"].setP(-3.5 * s + (9.0 if self._stooping() else 0.0))
+        hunch = 7.0 if self.sheltering else 0.0
+        parts["hip"].setP(-3.5 * s + (9.0 if self._stooping() else 0.0) + hunch)
 
         # The head tracks the player when they are close, and drifts otherwise.
         yaw, pitch = 0.0, 0.0
@@ -225,9 +279,10 @@ class Villagers:
             npc.build(place, node)
             self.npcs.append(npc)
 
-    def update(self, dt: float, hour: float, time: float, look_at=None):
+    def update(self, dt: float, hour: float, time: float, look_at=None,
+               weather: str = "clear"):
         for npc in self.npcs:
-            npc.update(dt, hour, time, look_at)
+            npc.update(dt, hour, time, look_at, weather)
 
     def nearest(self, pos: Vec3, radius: float = 3.2) -> NPC | None:
         best, best_d = None, radius * radius
