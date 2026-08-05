@@ -82,5 +82,8 @@ class Tutorial:
         return {"index": self.index, "active": self.active}
 
     def from_dict(self, data: dict) -> None:
-        self.index = int(data.get("index", len(STEPS)))
+        from .state import as_dict, as_int
+
+        data = as_dict(data)
+        self.index = min(len(STEPS), max(0, as_int(data.get("index"), len(STEPS))))
         self.active = bool(data.get("active", False))

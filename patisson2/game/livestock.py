@@ -133,9 +133,12 @@ class Livestock:
         return {"animals": out}
 
     def from_dict(self, data: dict) -> None:
-        entries = data.get("animals", [])
+        from .state import as_dict, as_float, as_list
+
+        entries = as_list(as_dict(data).get("animals"))
         for (animal, state), entry in zip(self.animals(), entries):
-            state.fed = entry.get("fed", 0.0)
-            state.progress = entry.get("progress", 0.0)
-            state.ready = entry.get("ready", False)
+            entry = as_dict(entry)
+            state.fed = min(1.0, max(0.0, as_float(entry.get("fed"))))
+            state.progress = min(1.0, max(0.0, as_float(entry.get("progress"))))
+            state.ready = bool(entry.get("ready", False))
             self._sync_marker(animal, state)

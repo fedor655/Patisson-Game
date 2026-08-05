@@ -326,22 +326,33 @@ class Farm:
         }
 
     def from_dict(self, data: dict):
+        from .state import as_dict, as_float, as_int, as_list
+
+        data = as_dict(data)
         for plot in self.plots:
             self._clear_model(plot)
             if plot.weed_node is not None:
                 plot.weed_node.removeNode()
                 plot.weed_node = None
         self.plots.clear()
-        for d in data.get("plots", []):
-            plot = self.add_plot(d["x"], d["y"], d.get("tilled", True))
-            plot.crop = d.get("crop")
-            plot.progress = d.get("progress", 0.0)
-            plot.water = d.get("water", 0.0)
-            plot.food = d.get("food", 0.0)
-            plot.health = d.get("health", 1.0)
-            plot.weeds = d.get("weeds", 0.0)
-            plot.blight = d.get("blight", 0.0)
+        for d in as_list(data.get("plots")):
+            d = as_dict(d)
+            if "x" not in d or "y" not in d:
+                continue
+            plot = self.add_plot(as_float(d["x"]), as_float(d["y"]),
+                                 bool(d.get("tilled", True)))
+            # A crop this build does not have — an older save, or an edited
+            # one — would otherwise take the loader down looking for its model.
+            crop = d.get("crop")
+            plot.crop = crop if crop in CROPS else None
+            plot.progress = min(1.0, max(0.0, as_float(d.get("progress"))))
+            plot.water = min(1.0, max(0.0, as_float(d.get("water"))))
+            plot.food = min(1.0, max(0.0, as_float(d.get("food"))))
+            plot.health = min(1.0, max(0.0, as_float(d.get("health"), 1.0)))
+            plot.weeds = min(1.0, max(0.0, as_float(d.get("weeds"))))
+            plot.blight = min(1.0, max(0.0, as_float(d.get("blight"))))
             self._refresh_weeds(plot)
             if plot.crop:
                 self._refresh_model(plot)
-        self.harvest_log = dict(data.get("harvested", {}))
+        self.harvest_log = {str(k): as_int(v)
+                            for k, v in as_dict(data.get("harvested")).items()}

@@ -17,6 +17,34 @@ SLOTS = (1, 2, 3)
 AUTOSAVE = "auto"
 
 
+# --- reading untrusted saves -------------------------------------------------
+# Everything below crosses the boundary between the game and a file a player
+# can edit, a disk can corrupt and an older build can have written. Nothing
+# past this point may assume a field is the type it was saved as.
+
+def as_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def as_list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
+def as_int(value, fallback: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def as_float(value, fallback: float = 0.0) -> float:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return fallback if value != value else value      # NaN
+
+
 def slot_path(slot) -> Path:
     """Where a slot lives. Slot 1 falls back to the old single-save file."""
     if slot == AUTOSAVE:
@@ -40,17 +68,24 @@ def read_meta(slot) -> dict | None:
         blob = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    return blob.get("meta") or {}
+    # A file on disk is untrusted input: it can be truncated, hand-edited or
+    # left over from another version. Anything that is not a save shaped like
+    # a save is treated as unreadable rather than allowed to crash the menu.
+    if not isinstance(blob, dict):
+        return None
+    return as_dict(blob.get("meta"))
 
 
 def describe(slot) -> str:
     meta = read_meta(slot)
     if meta is None:
-        return "пусто"
-    day = meta.get("day", 0) + 1
+        return "повреждено" if slot_path(slot).exists() else "пусто"
+    if not meta:
+        return "не читается"
+    day = as_int(meta.get("day")) + 1
     season = meta.get("season", "")
-    coins = meta.get("coins", 0)
-    played = int(meta.get("play_time", 0) // 60)
+    coins = as_int(meta.get("coins"))
+    played = as_int(meta.get("play_time")) // 60
     return f"День {day} · {season} · {coins} мон. · {played} мин"
 
 
@@ -486,18 +521,20 @@ class GameState:
         }
 
     def from_dict(self, data: dict):
-        self.coins = data.get("coins", self.coins)
-        self.fish = data.get("fish", 0)
-        self.total_fish = data.get("total_fish", 0)
-        self.water = data.get("water", 0.0)
-        self.inventory = dict(data.get("inventory", {}))
-        up = data.get("upgrades", {})
+        data = as_dict(data)
+        self.coins = as_int(data.get("coins"), self.coins)
+        self.fish = as_int(data.get("fish"))
+        self.total_fish = as_int(data.get("total_fish"))
+        self.water = as_float(data.get("water"))
+        self.inventory = {str(k): as_int(v)
+                          for k, v in as_dict(data.get("inventory")).items()}
+        up = as_dict(data.get("upgrades"))
         # Start from defaults: loading a save must not inherit tools bought in
         # whatever run happened to be in memory.
         self.upgrades = Upgrades()
         for key in ("hoe", "can", "rod", "basket"):
             if key in up:
-                setattr(self.upgrades, key, max(1, min(3, int(up[key]))))
+                setattr(self.upgrades, key, max(1, min(3, as_int(up[key], 1))))
         for key in ("fertilizer", "lantern_oil"):
             if key in up:
                 setattr(self.upgrades, key, bool(up[key]))
@@ -506,20 +543,26 @@ class GameState:
             self.upgrades.can = 2
         if "rod" not in up and up.get("enchanted_rod"):
             self.upgrades.rod = 3
-        self.achievements = set(data.get("achievements", []))
-        self.play_time = data.get("play_time", 0.0)
-        self.cooked = dict(data.get("cooked", {}))
-        self.fish_log = {k: list(v) for k, v in data.get("fish_log", {}).items()}
-        self.total_earned = int(data.get("total_earned", 0))
-        best = data.get("best_fish")
-        self.best_fish = (best[0], float(best[1])) if best else None
+        self.achievements = {str(a) for a in as_list(data.get("achievements"))}
+        self.play_time = as_float(data.get("play_time"))
+        self.cooked = {str(k): as_int(v)
+                       for k, v in as_dict(data.get("cooked")).items()}
+        self.fish_log = {}
+        for key, entry in as_dict(data.get("fish_log")).items():
+            entry = as_list(entry)
+            if len(entry) >= 2:
+                self.fish_log[str(key)] = [as_int(entry[0]), as_float(entry[1])]
+        self.total_earned = as_int(data.get("total_earned"))
+        best = as_list(data.get("best_fish"))
+        self.best_fish = (str(best[0]), as_float(best[1])) if len(best) >= 2 else None
         by_key = {q.key: q for q in self.quests}
-        for qd in data.get("quests", []):
-            q = by_key.get(qd["key"])
+        for qd in as_list(data.get("quests")):
+            qd = as_dict(qd)
+            q = by_key.get(qd.get("key"))
             if q:
-                q.progress = qd.get("progress", 0)
-                q.done = qd.get("done", False)
-                q.claimed = qd.get("claimed", False)
+                q.progress = as_int(qd.get("progress"))
+                q.done = bool(qd.get("done", False))
+                q.claimed = bool(qd.get("claimed", False))
 
 
 def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
@@ -562,24 +605,34 @@ def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
         blob = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return False
-    state.from_dict(blob.get("state", {}))
-    farm.from_dict(blob.get("farm", {}))
-    if livestock is not None:
-        livestock.from_dict(blob.get("livestock", {}))
-    if pests is not None:
-        pests.from_dict(blob.get("pests", {}))
-    if villagers is not None:
-        villagers.from_dict(blob.get("villagers", {}))
-    if weather is not None:
-        weather.from_dict(blob.get("weather", {}))
-    if tutorial is not None:
-        tutorial.from_dict(blob.get("tutorial", {}))
-    cycle.total_time = blob.get("clock", {}).get("total_time", cycle.total_time)
-    p = blob.get("player", {})
-    if p:
-        player.pos.x = p.get("x", player.pos.x)
-        player.pos.y = p.get("y", player.pos.y)
-        player.pos.z = player.world.height_at(player.pos.x, player.pos.y)
-        player.heading = p.get("heading", player.heading)
-        player.pitch = p.get("pitch", player.pitch)
+    if not isinstance(blob, dict):
+        return False
+    # Broad on purpose. This is a file the player can edit and a disk can
+    # corrupt; there is no failure in reading one that justifies taking the
+    # game down, and the caller already knows what to say when this is False.
+    try:
+        state.from_dict(as_dict(blob.get("state")))
+        farm.from_dict(as_dict(blob.get("farm")))
+        if livestock is not None:
+            livestock.from_dict(as_dict(blob.get("livestock")))
+        if pests is not None:
+            pests.from_dict(as_dict(blob.get("pests")))
+        if villagers is not None:
+            villagers.from_dict(as_dict(blob.get("villagers")))
+        if weather is not None:
+            weather.from_dict(as_dict(blob.get("weather")))
+        if tutorial is not None:
+            tutorial.from_dict(as_dict(blob.get("tutorial")))
+        clock = as_dict(blob.get("clock"))
+        cycle.total_time = as_float(clock.get("total_time"), cycle.total_time)
+        p = as_dict(blob.get("player"))
+        if p:
+            player.pos.x = as_float(p.get("x"), player.pos.x)
+            player.pos.y = as_float(p.get("y"), player.pos.y)
+            player.pos.z = player.world.height_at(player.pos.x, player.pos.y)
+            player.heading = as_float(p.get("heading"), player.heading)
+            player.pitch = as_float(p.get("pitch"), player.pitch)
+    except Exception as exc:
+        print(f"[save] не удалось прочитать {path.name}: {exc}", flush=True)
+        return False
     return True

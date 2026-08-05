@@ -217,4 +217,7 @@ class Pests:
         return {"scarecrow": self.scarecrow.condition}
 
     def from_dict(self, data: dict) -> None:
-        self.scarecrow.condition = float(data.get("scarecrow", 1.0))
+        from .state import as_dict, as_float
+
+        condition = as_float(as_dict(data).get("scarecrow"), 1.0)
+        self.scarecrow.condition = min(1.0, max(0.0, condition))

@@ -262,7 +262,9 @@ class Villagers:
         return {"met": [n.key for n in self.npcs if n.met]}
 
     def from_dict(self, data: dict) -> None:
-        met = set(data.get("met", ()))
+        from .state import as_dict, as_list
+
+        met = {str(k) for k in as_list(as_dict(data).get("met"))}
         for npc in self.npcs:
             npc.met = npc.key in met
             npc.recent.clear()

@@ -37,9 +37,12 @@ class WeatherState:
         return {"kind": self.kind, "timer": self.timer}
 
     def from_dict(self, data: dict) -> None:
+        from ..game.state import as_dict, as_float
+
+        data = as_dict(data)
         kind = data.get("kind", "clear")
         self.kind = kind if kind in ("clear", "cloudy", "rain", "snow") else "clear"
-        self.timer = float(data.get("timer", 40.0))
+        self.timer = max(1.0, as_float(data.get("timer"), 40.0))
 
 # (instances, box, particle size, fall speed, sway, tint, opacity, round?)
 PRESETS = {

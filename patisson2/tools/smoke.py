@@ -453,6 +453,58 @@ def run() -> int:
             + [f"  {k}: было {before[k]!r}, стало {after[k]!r}" for k in wrong])
     check("сохранение восстанавливает всё", round_trip)
 
+    def broken_saves():
+        """A damaged save must not take the game down.
+
+        The file is on disk where a player can edit it, a disk can corrupt it
+        and an older build can have written it. Six of these used to raise
+        straight out of load_game — and describe() raised too, so a single bad
+        slot made the main menu unopenable.
+        """
+        import json
+        from ..game.state import describe, slot_path
+
+        blobs = {
+            "пустой файл": "",
+            "не json": "{{{ ",
+            "список вместо объекта": "[1, 2, 3]",
+            "строка вместо объекта": '"hello"',
+            "обрезанный": '{"state": {"coins": 10',
+            "поля не тех типов": json.dumps({
+                "state": {"coins": "много", "inventory": "нет", "quests": 7,
+                          "upgrades": [1, 2], "achievements": 3, "fish_log": 9,
+                          "best_fish": "щука"},
+                "farm": {"plots": "нет", "harvested": 5},
+                "livestock": {"animals": "нет"}, "pests": {"scarecrow": "целое"},
+                "villagers": {"met": 5}, "weather": {"kind": 12, "timer": "скоро"},
+                "tutorial": {"index": "два"}, "clock": {"total_time": "полдень"},
+                "player": {"x": None, "y": [], "heading": {}},
+            }),
+            "нули везде": json.dumps({k: None for k in (
+                "state", "farm", "livestock", "pests", "villagers", "tutorial",
+                "clock", "player", "weather")}),
+            "культура из другой игры": json.dumps({
+                "farm": {"plots": [{"x": 1.0, "y": 2.0, "crop": "дракон",
+                                    "progress": 99.0, "tilled": True}]},
+                "weather": {"kind": "метеоритный дождь", "timer": -5.0},
+            }),
+        }
+        path = slot_path(3)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            for label, blob in blobs.items():
+                path.write_text(blob, encoding="utf-8")
+                app.load_slot(3)          # may be False; must never raise
+                app.taskMgr.step()
+                assert describe(3), f"{label}: слот нечем описать"
+            # And the world still works afterwards.
+            app.farm.plant(app.farm.plots[0], "patisson")
+            app.state.sell_all()
+        finally:
+            path.unlink(missing_ok=True)
+        assert describe(3) == "пусто", "удалённый слот описан неверно"
+    check("битые сохранения", broken_saves)
+
     check("сохранение", app.on_save)
     check("автосохранение", app.autosave)
     check("загрузка", app.on_load)
