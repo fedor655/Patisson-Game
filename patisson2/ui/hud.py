@@ -298,26 +298,83 @@ class HUD:
         right = ["", ""] + [value for _, value in rows]
         return left, right
 
+    def _pause_controls(self):
+        return ["УПРАВЛЕНИЕ", "",
+                "  WASD — движение,  Shift — бег",
+                "  Space — прыжок,  мышь — осмотреться",
+                "  ЛКМ / E — действие инструментом",
+                "  ПКМ — удобрить грядку",
+                "  1..5 — инструменты",
+                "  Q или колесо — выбор семян",
+                "  T — лавка,  K — котёл",
+                "  J — журнал,  Tab — карта",
+                "  O — настройки и клавиши",
+                "  F — продать всё у прилавка",
+                "  F5 / F9 — сохранить / загрузить",
+                "  P — фоторежим,  F1 — интерфейс",
+                "  M — звук,  - / = — громкость"]
+
+    def _pause_bag(self):
+        st = self.state
+        lines = ["В СУМКЕ", ""]
+        have = [f"  {CROPS[k].name}: {st.count(k)}"
+                for k in CROP_ORDER if st.count(k)]
+        lines += have or ["  (пусто)"]
+        seeds = [f"  Семена «{CROPS[k].name}»: {st.count(f'seed_{k}')}"
+                 for k in CROP_ORDER if st.count(f"seed_{k}")]
+        lines += [""] + (seeds or ["  Семян нет"])
+        lines += ["", f"  Рыба: {st.fish}", f"  Монеты: {st.coins}"]
+        audio = getattr(self.base, "audio", None)
+        if audio is not None and audio.enabled:
+            lines += ["", "ЗВУК", "",
+                      f"  Громкость: {audio.master * 100:.0f}%",
+                      f"  Музыка: {audio.music_volume * 100:.0f}%"]
+            if not audio.music:
+                lines.append("  (музыка ещё генерируется…)")
+        return lines
+
+    # Two rows of three. Six buttons across one row left every label spilling
+    # over its own frame and into the next button.
+    PAUSE_COLS = 3
+    PAUSE_HALF_W = 0.32
+    PAUSE_GAP = 0.02
+
     def _build_pause_buttons(self):
         """Pause needs a way out that is not just Esc."""
         from direct.gui.DirectGui import DirectButton
         app = self.base
+        tut = getattr(app, "tutorial", None)
         entries = [
             ("Продолжить", app.on_escape),
-            ("Настройки", app.toggle_options),
-            ("Пропустить обучение", app.skip_tutorial),
             (f"Сохранить (слот {app.save_slot})", app.cycle_save_slot),
-            ("В главное меню", app.open_main_menu),
-            ("Выход", app.userExit),
+            ("Настройки", app.toggle_options),
         ]
-        for i, (label, cmd) in enumerate(entries):
+        # A button that cannot do anything is worse than no button: drop the
+        # skip once the tutorial is over or already switched off.
+        if tut is not None and tut.active and not tut.finished:
+            entries.append(("Пропустить обучение", app.skip_tutorial))
+        entries += [
+            ("В главное меню", app.open_main_menu),
+            ("Выход из игры", app.userExit),
+        ]
+        pitch = self.PAUSE_HALF_W * 2.0 + self.PAUSE_GAP
+        rows = [entries[i:i + self.PAUSE_COLS]
+                for i in range(0, len(entries), self.PAUSE_COLS)]
+        placed = []
+        for row, group in enumerate(rows):
+            # A short last row is centred on its own, not left at the edge.
+            left = -pitch * (len(group) - 1) / 2.0
+            for col, (label, cmd) in enumerate(group):
+                placed.append((left + col * pitch, -0.475 - row * 0.115,
+                               label, cmd))
+        for x, y, label, cmd in placed:
             b = DirectButton(
                 parent=self.panel, text=label, text_font=self.font,
-                text_fg=INK, text_scale=0.031, text_pos=(0, -0.010),
+                text_fg=INK, text_scale=0.033, text_pos=(0, -0.011),
                 frameColor=((0.12, 0.14, 0.12, 0.9), (0.26, 0.32, 0.18, 0.95),
                             (0.34, 0.42, 0.22, 1.0), (0.1, 0.1, 0.1, 0.6)),
-                frameSize=(-0.143, 0.143, -0.042, 0.052), relief=1,
-                pos=(-0.90 + i * 0.30, 0, -0.615), command=cmd)
+                frameSize=(-self.PAUSE_HALF_W, self.PAUSE_HALF_W, -0.043, 0.053),
+                relief=1, pos=(x, 0, y), command=cmd)
             b.setTransparency(TransparencyAttrib.MAlpha)
             self.panel_buttons.append(b)
 
@@ -385,39 +442,16 @@ class HUD:
             self.panel_body2.show()
             self.panel_hint.setText("←→ — раздел · J или Esc — закрыть")
         elif self.panel_mode == "pause":
+            # Two columns, and both must stop well above the buttons: as one
+            # list this ran straight underneath them and the bag was unreadable.
             self.panel_title.setText("Пауза")
-            inv = []
-            for key in CROP_ORDER:
-                n = self.state.count(key)
-                if n:
-                    inv.append(f"  {CROPS[key].name}: {n}")
-            seeds = []
-            for key in CROP_ORDER:
-                n = self.state.count(f"seed_{key}")
-                if n:
-                    seeds.append(f"  Семена «{CROPS[key].name}»: {n}")
-            lines = ["УПРАВЛЕНИЕ", "",
-                     "  WASD — движение,  Shift — бег,  Space — прыжок",
-                     "  ЛКМ / E — действие инструментом",
-                     "  1..5 — инструменты,  Q/колесо — выбор семян",
-                     "  T — магазин,  K — котёл,  J — журнал,  Tab — карта",
-                     "  F5 — сохранить,  F9 — загрузить",
-                     "  P — фотореж. (трассировка лучей),  F1 — интерфейс",
-                     "  M — звук вкл/выкл,  - / = — громкость",
-                     "  F — продать всё у прилавка,  Esc — пауза",
-                     "", "В СУМКЕ", ""]
-            lines += inv or ["  (пусто)"]
-            lines += [""] + (seeds or ["  Семян нет"])
-            lines += ["", f"  Рыба: {self.state.fish}",
-                      f"  Монеты: {self.state.coins}"]
-            audio = getattr(self.base, "audio", None)
-            if audio is not None and audio.enabled:
-                lines += ["", "ЗВУК", "",
-                          f"  Громкость: {audio.master * 100:.0f}%",
-                          f"  Музыка: {audio.music_volume * 100:.0f}%"]
-                if not audio.music:
-                    lines.append("  (музыка ещё генерируется…)")
-            self.panel_body.setText("\n".join(lines))
+            self.panel_body.setScale(0.036)
+            self.panel_body.setPos(-0.98, 0.50)
+            self.panel_body.setText("\n".join(self._pause_controls()))
+            self.panel_body2.setScale(0.036)
+            self.panel_body2.setPos(0.10, 0.50)
+            self.panel_body2.setText("\n".join(self._pause_bag()))
+            self.panel_body2.show()
             self.panel_hint.setText("")
 
     def move_shop_cursor(self, delta: int):

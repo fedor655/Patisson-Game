@@ -184,6 +184,35 @@ def run() -> int:
                                      app.reset_bindings()))
     check("пауза", lambda: (app.on_escape(), app.taskMgr.step(), app.on_escape()))
 
+    def pause_layout():
+        """Labels inside their own frames, and no two frames overlapping.
+
+        Six buttons used to sit in one row: every label spilled over its frame
+        and into its neighbour, and the panel text ran underneath them all.
+        """
+        app.hud.open_panel("pause")
+        app.taskMgr.step()
+        boxes = []
+        for b in app.hud.panel_buttons:
+            scale = b["text_scale"][0]
+            width = b.component("text0").textNode.getWidth() * scale
+            l, r, d, u = b["frameSize"]
+            assert width <= (r - l) - 0.01, f"{b['text']!r} шире кнопки"
+            x, _y, z = b.getPos()
+            boxes.append((x + l, x + r, z + d, z + u, b["text"]))
+        for i, a in enumerate(boxes):
+            for c in boxes[i + 1:]:
+                apart = a[1] <= c[0] or c[1] <= a[0] or a[3] <= c[2] or c[3] <= a[2]
+                assert apart, f"кнопки налезают: {a[4]!r} и {c[4]!r}"
+        # The body must stop above the top row of buttons.
+        top = max(b[3] for b in boxes)
+        body_z = app.hud.panel_body.getPos()[1]
+        rows = len(app.hud.panel_body.getText().split("\n"))
+        bottom = body_z - rows * app.hud.panel_body.getScale()[0] * 1.22
+        assert bottom > top, f"текст заходит на кнопки: {bottom:.3f} <= {top:.3f}"
+        app.hud.close_panel()
+    check("вёрстка паузы", pause_layout)
+
     # --- sleeping, saving, loading ---------------------------------------
     check("сон", lambda: (setattr(app.player.pos, "x", app.props.bed_pos[0]),
                           setattr(app.player.pos, "y", app.props.bed_pos[1]),

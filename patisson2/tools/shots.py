@@ -145,6 +145,21 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     eye = (victim.x - 4.6, victim.y - 5.4)
     look_at(app.player, (victim.x, victim.y, victim.z + 0.5), (eye[0], eye[1], gz(*eye)))
     shot("03b-pests.png", hour=11.0)
+
+    # The crow again, close enough to actually see. The wide shot above frames
+    # the whole garden, and the bird comes out four pixels tall.
+    crow = app.pests.crows[0] if app.pests.crows else None
+    if crow is not None:
+        # Take it off the pest list first. The bird flees anything inside
+        # CROW_SCARE_RANGE, which includes the camera, so at any distance where
+        # it is big enough to see it has already left. Off the list the game
+        # loop cannot flush it, and the node stays where it is, mid-peck.
+        frozen, app.pests.crows = app.pests.crows, []
+        cp = crow.node.getPos()
+        eye = (cp.x + 2.1, cp.y + 1.0)
+        look_at(app.player, (cp.x, cp.y, cp.z + 0.16), (eye[0], eye[1], gz(*eye) - 0.7))
+        shot("03c-crow.png", hour=11.0)
+        app.pests.crows = frozen
     app.pests.scare_all()
     for _ in range(240):
         app.pests.update(1 / 60.0, Vec3(90, 90, 0), False)
@@ -312,6 +327,11 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     app.hud.refresh_panel()
     shot("17aa-stats.png")
     app.hud.journal_page = 0
+    app.hud.close_panel()
+
+    app.hud.open_panel("pause")
+    settle(3)
+    shot("17e-pause.png", hour=10.0)
     app.hud.close_panel()
 
     # 11. Autumn, then winter. The clock has to move so the game loop agrees
