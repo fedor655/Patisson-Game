@@ -20,6 +20,7 @@ from .config import Config
 from .engine.pipeline import RenderPipeline
 from .game.cooking import POT_POSITION, Kitchen, item_name
 from .game.farming import CROPS, CROP_ORDER, Farm
+from .game.fishing import BITE, IDLE, REELING, WAITING, Fishing
 from .game.livestock import FEED_ITEM, SPECIES, Livestock
 from .game.npc import Villagers
 from .game.player import Player
@@ -101,7 +102,7 @@ class PatissonApp(ShowBase):
 
         self.keys = {}
         self.paused = False
-        self.fishing = None            # (state, timer)
+        self.fishing = Fishing(random.Random(self.cfg.world.seed ^ 0xF15))
         self.photo_mode = False
         self.mode = "menu"             # menu | playing
         self.menu = MainMenu(self, self.hud)
@@ -470,11 +471,14 @@ class PatissonApp(ShowBase):
                 return "", f"{kind} голодна — нужна пшеница x{cost}"
             pct = animal_state.progress * 100.0
             return "", f"{kind}: сыта, готово на {pct:.0f}%"
-        if self.fishing:
-            phase = self.fishing[0]
-            if phase == "bite":
+        if self.fishing.active:
+            fs = self.fishing.state
+            if fs.phase == BITE:
                 return "[E] Подсекай!", ""
-            return "Ждём поклёвки…", "[E] отменить"
+            if fs.phase == REELING:
+                return ("[E] Тяни, когда метка в зоне",
+                        f"{fs.species.name} · {fs.pulls_done}/{fs.species.pulls}")
+            return "Ждём поклёвки…", "[E] смотать"
         tool = st.tool
         plot, _ = self._aim_plot()
         if tool == "hoe":
@@ -547,7 +551,7 @@ class PatissonApp(ShowBase):
                 self.sound("click", 0.4)
             return
 
-        if self.fishing:
+        if self.fishing.active:
             self._fishing_input()
             return
 
@@ -599,8 +603,7 @@ class PatissonApp(ShowBase):
 
         elif tool == "rod":
             if self._near_water():
-                delay = 1.4 if st.upgrades.enchanted_rod else 3.0
-                self.fishing = ["wait", self.rng.uniform(delay * 0.6, delay * 1.6)]
+                self.fishing.cast(st.upgrades.enchanted_rod)
                 self.sound("cast", 0.8)
             else:
                 self.sound("error", 0.6)
@@ -640,31 +643,57 @@ class PatissonApp(ShowBase):
         self.state.notify("Удобрено")
 
     def _fishing_input(self):
-        phase = self.fishing[0]
-        if phase == "bite":
-            self.sound("splash", 0.8)
-            self.sound("catch", 0.7)
-            self.state.fish += 1
-            self.state.total_fish += 1
-            self.state.record("fish")
-            self.state.notify("Поймана рыба!")
-            if self.state.total_fish >= 20:
-                self.state.unlock("angler")
-            self.fishing = None
-        else:
-            self.fishing = None
-            self.state.notify("Удочка смотана")
+        st = self.state
+        event = self.fishing.strike(self.cycle.hour, self.cycle.season,
+                                    0.55 if st.upgrades.enchanted_rod else 0.0)
+        if event == "early":
+            self.sound("error", 0.5)
+            st.notify("Рано подсёк — леска пуста")
+        elif event == "hooked":
+            self.sound("splash", 0.7)
+        elif event == "pull":
+            self.sound("click", 0.6)
+        elif event == "miss":
+            self.sound("error", 0.45)
+        elif event == "lost":
+            self.sound("error", 0.7)
+            st.notify("Рыба сорвалась")
+        elif event == "landed":
+            self._land_fish()
+
+    def _land_fish(self):
+        st = self.state
+        catch = self.fishing.take_catch()
+        if catch is None:
+            return
+        if catch.species.key == "boot":
+            self.sound("splash", 0.7)
+            st.notify("Старый сапог. Бывает.")
+            return
+        self.sound("catch", 0.8)
+        st.add_fish(catch.species.key, catch.size)
+        st.record("fish")
+        st.notify(f"Поймано: {catch.describe()} — {catch.value} мон.")
+        if st.total_fish >= 20:
+            st.unlock("angler")
+        if catch.species.key == "pike":
+            st.unlock("pike_hunter")
+        if catch.species.key == "goldfish":
+            st.unlock("golden")
+        from .game.fishing import SPECIES
+        wanted = {sp.key for sp in SPECIES if sp.key != "boot"}
+        if wanted <= set(st.fish_log):
+            st.unlock("ichthyologist")
 
     def _update_fishing(self, dt: float):
-        if not self.fishing:
+        if not self.fishing.active:
             return
-        self.fishing[1] -= dt
-        if self.fishing[1] <= 0:
-            if self.fishing[0] == "wait":
-                self.fishing = ["bite", 1.35]
-            else:
-                self.state.notify("Рыба сорвалась…")
-                self.fishing = None
+        event = self.fishing.update(dt, self.state.upgrades.enchanted_rod)
+        if event == "bite":
+            self.sound("splash", 0.5)
+        elif event == "missed_bite":
+            self.sound("error", 0.5)
+            self.state.notify("Не успели подсечь")
 
     # ---------------------------------------------------------------- weather
 

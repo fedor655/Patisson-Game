@@ -97,7 +97,7 @@ class Kitchen:
             return None
         for key, need in recipe.inputs.items():
             if key == "fish":
-                self.state.fish -= need
+                self.state.take_fish(need)
             else:
                 self.state.take(key, need)
         self.state.give(recipe.key, 1)

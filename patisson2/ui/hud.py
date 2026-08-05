@@ -99,6 +99,23 @@ class HUD:
             np_.setBin("fixed", 10)
             self.tool_slot_bg.append(np_)
 
+        # --- fishing reel bar -------------------------------------------
+        self.fish_bar = DirectFrame(
+            parent=self.root, frameColor=(0.04, 0.05, 0.06, 0.80),
+            frameSize=(-0.34, 0.34, -0.030, 0.030), pos=(0, 0, -0.17))
+        self.fish_zone = DirectFrame(
+            parent=self.fish_bar, frameColor=(0.34, 0.86, 0.44, 0.55),
+            frameSize=(-0.05, 0.05, -0.028, 0.028))
+        self.fish_marker = DirectFrame(
+            parent=self.fish_bar, frameColor=(1.0, 0.92, 0.55, 0.95),
+            frameSize=(-0.008, 0.008, -0.036, 0.036))
+        self.fish_label = OnscreenText(
+            text="", pos=(0, 0.055), scale=0.042, fg=INK, font=self.font,
+            align=TextNode.ACenter, parent=self.fish_bar, mayChange=True)
+        self.fish_bar.hide()
+        self._fish_shown = False
+        self._fish_band = -1.0
+
         self.crosshair = OnscreenText(text="+", pos=(0, -0.012), scale=0.055,
                                       fg=(1, 1, 1, 0.55), font=self.font,
                                       align=TextNode.ACenter, parent=self.root)
@@ -246,6 +263,18 @@ class HUD:
                 mark = "✔" if q.done else " "
                 lines.append(f" [{mark}] {q.title}  ({min(q.progress, q.goal)}/{q.goal})")
                 lines.append(f"      {q.detail}")
+            from ..game.fishing import SPECIES
+            caught = self.state.fish_log
+            if caught:
+                lines += ["", "УЛОВ", ""]
+                for sp in SPECIES:
+                    entry = caught.get(sp.key)
+                    if not entry:
+                        continue
+                    count, kilos = entry
+                    biggest = kilos / max(count, 1)
+                    lines.append(f"  {sp.name}: {count} шт, {kilos:.1f} кг "
+                                 f"(в среднем {biggest:.1f})")
             lines += ["", "ДОСТИЖЕНИЯ", ""]
             for key, desc in ACHIEVEMENTS.items():
                 mark = "✔" if key in self.state.achievements else " "
@@ -297,6 +326,32 @@ class HUD:
         return SHOP_ITEMS[self.shop_index][0]
 
     # ---------------------------------------------------------------- update
+
+    def _update_fishing(self):
+        """Draw the reel bar: a sweeping marker and the band to stop it in."""
+        from ..game.fishing import REELING
+        fishing = getattr(self.base, "fishing", None)
+        fs = fishing.state if fishing else None
+        if fs is None or fs.phase != REELING or fs.species is None:
+            if self._fish_shown:
+                self.fish_bar.hide()
+                self._fish_shown = False
+            return
+        if not self._fish_shown:
+            self.fish_bar.show()
+            self._fish_shown = True
+
+        half = 0.34
+        # frameSize rebuilds the frame, so only when the species changes.
+        if abs(fs.band - self._fish_band) > 1e-4:
+            self._fish_band = fs.band
+            zone = fs.band * half
+            self.fish_zone["frameSize"] = (-zone, zone, -0.028, 0.028)
+        self.fish_zone.setX(-half + fs.band_centre * half * 2.0)
+        self.fish_marker.setX(-half + fs.marker * half * 2.0)
+        self._set(self.fish_label,
+                  f"{fs.species.name}   {fs.pulls_done}/{fs.species.pulls}"
+                  f"   промахи {fs.misses}/3")
 
     def _set(self, node, value: str):
         if self._last.get(id(node)) != value:
@@ -354,6 +409,8 @@ class HUD:
 
         # Assigning frameSize rebuilds the frame's geometry, so quantise it —
         # a bar that redraws every frame costs more than the rest of the HUD.
+        self._update_fishing()
+
         frac = max(0.0, min(1.0, state.stamina_frac))
         step = round(frac * 40)
         if step != self._stamina_step:

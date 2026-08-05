@@ -98,6 +98,9 @@ ACHIEVEMENTS = {
     "first_dish": "Первое блюдо у котла",
     "chef": "Приготовить все пять блюд",
     "farmhand": "Накормить животное",
+    "pike_hunter": "Поймать щуку",
+    "golden": "Поймать золотую рыбку",
+    "ichthyologist": "Поймать все виды рыб",
 }
 
 
@@ -127,6 +130,8 @@ class GameState:
         self.sound = None
         # recipe key -> times cooked, for quests and achievements
         self.cooked: dict[str, int] = {}
+        # species key -> (count, total kilos), for value and the journal
+        self.fish_log: dict[str, list] = {}
 
     # ------------------------------------------------------------ inventory
 
@@ -143,6 +148,34 @@ class GameState:
 
     def count(self, key: str) -> int:
         return self.inventory.get(key, 0)
+
+    def add_fish(self, species_key: str, kilos: float) -> None:
+        entry = self.fish_log.setdefault(species_key, [0, 0.0])
+        entry[0] += 1
+        entry[1] += kilos
+        self.fish += 1
+        self.total_fish += 1
+
+    def take_fish(self, n: int = 1) -> bool:
+        """Spend fish as a cooking ingredient, cheapest species first."""
+        if self.fish < n:
+            return False
+        from .fishing import BY_KEY
+        order = sorted(self.fish_log, key=lambda k: BY_KEY[k].price
+                       if k in BY_KEY else 0)
+        left = n
+        for key in order:
+            if left <= 0:
+                break
+            count, kilos = self.fish_log[key]
+            used = min(count, left)
+            avg = kilos / max(count, 1)
+            self.fish_log[key] = [count - used, kilos - avg * used]
+            if self.fish_log[key][0] <= 0:
+                del self.fish_log[key]
+            left -= used
+        self.fish -= n
+        return True
 
     def give(self, key: str, n: int = 1):
         self.inventory[key] = self.inventory.get(key, 0) + n
@@ -202,7 +235,15 @@ class GameState:
             if key in sellable:
                 n = self.inventory.pop(key)
                 total += item_price(key) * n
-        if self.fish:
+        if self.fish_log:
+            from .fishing import BY_KEY
+            for key, (count, kilos) in self.fish_log.items():
+                species = BY_KEY.get(key)
+                if species:
+                    total += int(round(species.price * kilos))
+            self.fish_log.clear()
+            self.fish = 0
+        elif self.fish:
             total += self.fish * FISH_PRICE
             self.fish = 0
         if total:
@@ -264,6 +305,7 @@ class GameState:
             "achievements": sorted(self.achievements),
             "play_time": self.play_time,
             "cooked": self.cooked,
+            "fish_log": self.fish_log,
             "quests": [
                 {"key": q.key, "progress": q.progress, "done": q.done,
                  "claimed": q.claimed}
@@ -283,6 +325,7 @@ class GameState:
         self.achievements = set(data.get("achievements", []))
         self.play_time = data.get("play_time", 0.0)
         self.cooked = dict(data.get("cooked", {}))
+        self.fish_log = {k: list(v) for k, v in data.get("fish_log", {}).items()}
         by_key = {q.key: q for q in self.quests}
         for qd in data.get("quests", []):
             q = by_key.get(qd["key"])

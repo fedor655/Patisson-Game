@@ -120,42 +120,60 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     st.tool_index = 3
     shot("04-pond.png", hour=8.5, weather="clear")
 
+    # Fishing: cast, wait out the bite, strike, then capture the reel bar.
+    from ..game.fishing import BITE, REELING
+    app.player.pos.x, app.player.pos.y = cx, cy
+    app.player.pos.z = gz(cx, cy)
+    app.fishing.cast(False)
+    for _ in range(600):
+        app.fishing.update(1 / 60.0, False)
+        if app.fishing.state.phase == BITE:
+            app.fishing.strike(8.5, 1, 0.0)
+            break
+    if app.fishing.state.phase == REELING:
+        app.fishing.state.band_centre = 0.62
+        app.fishing.state.marker = 0.58
+        app.fishing.state.pulls_done = 1
+        look_at(app.player, (tx, ty, gz(tx, ty) + 2.5), (cx, cy, gz(cx, cy) + 0.25))
+        shot("05-fishing.png", hour=8.5)
+    app.fishing.cancel()
+
     # 5. The well and the house.
     look_at(app.player, (7.5, 7.0, 1.4), (12.0, 0.5, gz(12.0, 0.5)))
-    shot("05-well.png", hour=9.0)
+    shot("06-well.png", hour=9.0)
 
     look_at(app.player, (16.0, -13.0, 2.6), (2.0, -24.0, gz(2.0, -24.0) + 2.0))
-    shot("06-house.png", hour=17.0)
+    shot("07-house.png", hour=17.0)
 
     # 6. Barn, cows and chickens.
     look_at(app.player, (-19.0, -14.0, 2.0), (-8.0, -22.0, gz(-8.0, -22.0)))
-    shot("07-barn.png", hour=11.0)
+    shot("08-barn.png", hour=11.0)
 
     # 7. Market stall with a villager.
     look_at(app.player, (-13.0, -2.0, 1.4), (-7.0, -6.0, gz(-7.0, -6.0)))
     st.coins = 385
     st.give("patisson", 4)
     st.fish = 6
-    shot("08-market.png", hour=14.0)
+    shot("09-market.png", hour=14.0)
 
     # 8. Wide shot of the whole farm from the hillside.
     hx, hy = 34.0, -34.0
     look_at(app.player, (-6.0, 6.0, 0.0), (hx, hy, gz(hx, hy) + 7.0))
-    shot("09-overview.png", hour=16.5)
+    shot("10-overview.png", hour=16.5)
 
     # 9. Golden hour and night.
     look_at(app.player, (-20.0, 16.0, 2.0), (6.0, -8.0, gz(6.0, -8.0)))
-    shot("10-sunset.png", hour=19.6)
+    shot("11-sunset.png", hour=19.6)
 
     look_at(app.player, (7.5, 7.0, 1.2), (2.0, -5.0, gz(2.0, -5.0)))
-    shot("11-night.png", hour=23.0)
+    shot("12-night.png", hour=23.0)
 
     # 10. Rain and the journal/shop UI.
     look_at(app.player, (0.0, 6.0, 0.4), (5.0, -5.0, gz(5.0, -5.0)))
-    shot("12-rain.png", hour=13.0, weather="rain")
+    shot("13-rain.png", hour=13.0, weather="rain")
 
     app.hud.open_panel("shop")
-    shot("13-shop.png", hour=13.0, weather="clear")
+    shot("14-shop.png", hour=13.0, weather="clear")
     app.hud.close_panel()
 
     # Kitchen: stock the bag so the recipe list shows real availability.
@@ -169,10 +187,10 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     app.player.pos.z = gz(px, py)
     # Stand off to the side so the hearth, not the house wall, is the backdrop.
     look_at(app.player, (px, py, 0.5), (px - 3.4, py + 2.6, gz(px - 3.4, py + 2.6)))
-    shot("14-hearth.png", hour=13.0)
+    shot("15-hearth.png", hour=13.0)
     app.kitchen.index = 4
     app.hud.open_panel("kitchen")
-    shot("15-kitchen.png", hour=13.0)
+    shot("16-kitchen.png", hour=13.0)
     app.hud.close_panel()
 
     app.hud.open_panel("journal")
@@ -180,7 +198,7 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     st.unlock("first_seed")
     st.unlock("first_harvest")
     app.hud.refresh_panel()
-    shot("16-journal.png")
+    shot("17-journal.png")
     app.hud.close_panel()
 
     # 11. Autumn, then winter. The clock has to move so the game loop agrees
@@ -189,11 +207,11 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     season_len = day * cfg.game.season_days
     app.cycle.total_time += season_len * 2
     look_at(app.player, (-3.0, 13.0, 1.0), (11.0, -15.0, gz(11.0, -15.0) + 3.0))
-    shot("17-autumn.png", hour=16.0, weather="clear")
+    shot("18-autumn.png", hour=16.0, weather="clear")
 
     app.cycle.total_time += season_len
     look_at(app.player, (-4.0, 10.0, 0.5), (6.0, -10.0, gz(6.0, -10.0)))
-    shot("18-winter.png", hour=12.0, weather="snow")
+    shot("19-winter.png", hour=12.0, weather="snow")
 
     # 12. Photo mode: the same view, path traced.
     app.cycle.total_time = day * 8 + 10.5 / 24.0 * day     # back to summer
@@ -205,10 +223,10 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     if tracer:
         while tracer.samples < 320:
             app.taskMgr.step()
-        shot("19-pathtraced.png")
+        shot("20-pathtraced.png")
         app.toggle_photo_mode()
     else:
-        print("[shot] 19-pathtraced.png skipped (no compute support)", flush=True)
+        print("[shot] 20-pathtraced.png skipped (no compute support)", flush=True)
 
     print("done ->", out_dir, flush=True)
     sys.stdout.flush()
