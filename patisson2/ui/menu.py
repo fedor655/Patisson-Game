@@ -10,6 +10,7 @@ from panda3d.core import TextNode, TransparencyAttrib, Vec3
 
 from ..game.state import (ACHIEVEMENTS, AUTOSAVE, SLOTS, any_save, describe,
                           slot_label)
+from .hud import fit_text
 
 GOLD = (1.0, 0.86, 0.45, 1)
 INK = (0.95, 0.95, 0.93, 1)
@@ -67,6 +68,13 @@ class MainMenu:
             font=self.font, align=TextNode.ALeft, parent=self.root, mayChange=True)
 
         self.buttons: list[DirectButton] = []
+        # The achievements list is long and set small; over a sunlit field the
+        # scrim alone is not enough to read it against.
+        self.info_panel = DirectFrame(
+            parent=self.root, frameColor=(0.05, 0.06, 0.05, 0.88),
+            frameSize=(-1.42, -0.52, -0.72, 0.14))
+        self.info_panel.setTransparency(TransparencyAttrib.MAlpha)
+        self.info_panel.hide()
         self.info = OnscreenText(
             text="", pos=(-1.36, -0.62), scale=0.042, fg=DIM, font=self.font,
             align=TextNode.ALeft, parent=self.root, mayChange=True, wordwrap=26)
@@ -79,6 +87,16 @@ class MainMenu:
         for b in self.buttons:
             b.destroy()
         self.buttons.clear()
+        # The achievements pane moves and shrinks the info text; every other
+        # pane expects it where it started.
+        self.info.setPos(-1.36, -0.62)
+        self.info.setScale(0.042)
+        self.info["wordwrap"] = 26
+        self.info.setFg(DIM)
+        self.info_panel.hide()
+
+    # Text starts at -0.52 and the frame ends at 0.56, so this much room.
+    BUTTON_TEXT_WIDTH = 1.05
 
     def _button(self, index: int, label: str, command, enabled=True) -> DirectButton:
         b = DirectButton(
@@ -91,6 +109,9 @@ class MainMenu:
             command=command if enabled else None,
             state="normal" if enabled else "disabled",
         )
+        # Save-slot labels carry a whole line of detail and used to run a third
+        # of their length out past the frame.
+        fit_text(b, self.BUTTON_TEXT_WIDTH, start=0.058, floor=0.030)
         b.setTransparency(TransparencyAttrib.MAlpha)
         self.buttons.append(b)
         return b
@@ -168,8 +189,22 @@ class MainMenu:
         got = self.app.state.achievements
         from .hud import MARK
         lines = [f"{MARK if k in got else '·'}  {v}" for k, v in ACHIEVEMENTS.items()]
-        self.info.setText(f"Открыто {len(got)} из {len(ACHIEVEMENTS)}\n\n"
-                          + "\n".join(lines))
+        # Eighteen achievements at the usual size ran off the bottom of the
+        # screen: only the first six were ever visible. Start under the one
+        # button this pane has, and size the list to the room left.
+        top, scale = 0.04, 0.032
+        self.info.setPos(-1.36, top)
+        self.info.setScale(scale)
+        self.info["wordwrap"] = 40
+        self.info.setFg(INK)
+        text = f"Открыто {len(got)} из {len(ACHIEVEMENTS)}\n\n" + "\n".join(lines)
+        self.info.setText(text)
+        # Size the backing panel to the text rather than to a guess: the list
+        # grows every time an achievement is added.
+        rows = text.count("\n") + 1
+        bottom = top - rows * scale * 1.22 - 0.03
+        self.info_panel["frameSize"] = (-1.42, -0.52, bottom, top + 0.10)
+        self.info_panel.show()
 
     # -------------------------------------------------------------- control
 

@@ -17,6 +17,23 @@ JOURNAL_PAGES = ("задания", "справочник", "статистика
 # carry U+2714 — Segoe UI renders it as an empty box. "x" is always there.
 MARK = "x"
 
+
+def fit_text(button, max_width: float, start: float, floor: float = 0.028):
+    """Shrink a button's text until it fits inside the button.
+
+    Guessing a scale that suits the longest label you happened to think of is
+    how the save-slot buttons ended up with their text hanging a third of the
+    way past the frame. Measure the glyphs instead.
+    """
+    node = button.component("text0").textNode
+    width = node.getWidth()
+    if width <= 0.0:
+        return start
+    scale = min(start, max_width / width)
+    scale = max(scale, floor)
+    button["text_scale"] = (scale, scale)
+    return scale
+
 # Panda's built-in font has no Cyrillic; fall back through the usual suspects.
 FONT_CANDIDATES = [
     "C:/Windows/Fonts/segoeui.ttf",
@@ -385,18 +402,24 @@ class HUD:
         self.panel_body.setPos(-0.95, 0.44)
         self.panel_body2.hide()
         if self.panel_mode == "shop":
+            # Prices go in their own column. Padding names to a fixed width
+            # only lines anything up in a monospaced font, and this one is not:
+            # every price in the shop started at a different x.
             self.panel_title.setText("Лавка")
-            lines = []
+            names, prices = [], []
             for i, (key, name, price, desc) in enumerate(shop_entries(self.state.upgrades)):
-                owned = ""
-                if key in ("golden_can", "enchanted_rod", "lantern_oil"):
-                    if getattr(self.state.upgrades, key):
-                        owned = "  [куплено]"
+                owned = ("  [куплено]" if key == "lantern_oil"
+                         and self.state.upgrades.lantern_oil else "")
                 cursor = ">" if i == self.shop_index else " "
-                lines.append(f"{cursor} {name:<24} {price:>4} мон.{owned}")
+                names.append(f"{cursor} {name}")
+                prices.append(f"{price} мон.{owned}")
                 if i == self.shop_index:
-                    lines.append(f"    {desc}")
-            self.panel_body.setText("\n".join(lines))
+                    names.append(f"    {desc}")
+                    prices.append("")          # keep the columns in step
+            self.panel_body.setText("\n".join(names))
+            self.panel_body2.setPos(-0.20, 0.44)
+            self.panel_body2.setText("\n".join(prices))
+            self.panel_body2.show()
             self.panel_hint.setText(
                 f"Монет: {self.state.coins}    "
                 "↑/↓ выбор   Enter купить   F продать всё   Esc выход")
@@ -404,14 +427,16 @@ class HUD:
             from ..game.cooking import RECIPES, item_name
             kitchen = self.base.kitchen
             self.panel_title.setText("Котёл")
-            lines = []
+            lines, prices = [], []
             for i, r in enumerate(RECIPES):
                 cursor = ">" if i == kitchen.index else " "
                 parts = "  ".join(f"{item_name(k)} x{v}" for k, v in r.inputs.items())
                 have = self.state.count(r.key)
                 stock = f"   (в сумке: {have})" if have else ""
-                lines.append(f"{cursor} {r.name:<22} {r.sell_price:>4} мон.{stock}")
+                lines.append(f"{cursor} {r.name}")
+                prices.append(f"{r.sell_price} мон.{stock}")
                 lines.append(f"    {parts}")
+                prices.append("")
                 if i == kitchen.index:
                     missing = kitchen.missing(r)
                     if missing:
@@ -420,8 +445,13 @@ class HUD:
                         lines.append(f"    не хватает: {short}")
                     else:
                         lines.append(f"    можно готовить  ·  +{r.stamina:.0f} сил")
+                    prices.append("")
                 lines.append("")
+                prices.append("")
             self.panel_body.setText("\n".join(lines))
+            self.panel_body2.setPos(-0.20, 0.44)
+            self.panel_body2.setText("\n".join(prices))
+            self.panel_body2.show()
             self.panel_hint.setText(
                 "↑/↓ выбор   Enter приготовить   F съесть   K или Esc выход")
         elif self.panel_mode == "journal":

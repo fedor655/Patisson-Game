@@ -184,26 +184,38 @@ def run() -> int:
                                      app.reset_bindings()))
     check("пауза", lambda: (app.on_escape(), app.taskMgr.step(), app.on_escape()))
 
-    def pause_layout():
-        """Labels inside their own frames, and no two frames overlapping.
+    def measure_buttons(buttons, where):
+        """Every label inside its own frame, and no two frames overlapping.
 
-        Six buttons used to sit in one row: every label spilled over its frame
-        and into its neighbour, and the panel text ran underneath them all.
+        Six pause buttons used to sit in one row with every label spilling over
+        its frame into its neighbour, and the save-slot labels ran a third of
+        their length past the button. Both were laid out by guessing a scale.
         """
-        app.hud.open_panel("pause")
-        app.taskMgr.step()
+        from panda3d.core import TextNode
         boxes = []
-        for b in app.hud.panel_buttons:
+        for b in buttons:
+            node = b.component("text0").textNode
             scale = b["text_scale"][0]
-            width = b.component("text0").textNode.getWidth() * scale
+            width = node.getWidth() * scale
             l, r, d, u = b["frameSize"]
-            assert width <= (r - l) - 0.01, f"{b['text']!r} шире кнопки"
+            if node.getAlign() == TextNode.ALeft:
+                room = r - b["text_pos"][0]
+            else:
+                room = r - l
+            assert width <= room - 0.01, \
+                f"{where}: {b['text']!r} шире кнопки ({width:.3f} > {room:.3f})"
             x, _y, z = b.getPos()
             boxes.append((x + l, x + r, z + d, z + u, b["text"]))
         for i, a in enumerate(boxes):
             for c in boxes[i + 1:]:
                 apart = a[1] <= c[0] or c[1] <= a[0] or a[3] <= c[2] or c[3] <= a[2]
-                assert apart, f"кнопки налезают: {a[4]!r} и {c[4]!r}"
+                assert apart, f"{where}: кнопки налезают — {a[4]!r} и {c[4]!r}"
+        return boxes
+
+    def pause_layout():
+        app.hud.open_panel("pause")
+        app.taskMgr.step()
+        boxes = measure_buttons(app.hud.panel_buttons, "пауза")
         # The body must stop above the top row of buttons.
         top = max(b[3] for b in boxes)
         body_z = app.hud.panel_body.getPos()[1]
@@ -212,6 +224,29 @@ def run() -> int:
         assert bottom > top, f"текст заходит на кнопки: {bottom:.3f} <= {top:.3f}"
         app.hud.close_panel()
     check("вёрстка паузы", pause_layout)
+
+    def menu_layout():
+        """Same measurements for the title screen, plus its longest pane."""
+        app.write_save(1)                     # so the slot list has real text
+        menu = app.menu
+        for name, build in (("главное", menu._build_root),
+                            ("сохранения", menu._build_saves),
+                            ("звук", menu._build_settings),
+                            ("достижения", menu._build_achievements)):
+            build()
+            app.taskMgr.step()
+            measure_buttons(menu.buttons, f"меню/{name}")
+        # The achievements list must fit on the screen and on its own panel.
+        text = menu.info.getText()
+        rows = text.count("\n") + 1
+        top = menu.info.getPos()[1]
+        bottom = top - rows * menu.info.getScale()[0] * 1.22
+        assert bottom > -1.0, f"список уезжает за экран: {bottom:.3f}"
+        panel_bottom = menu.info_panel["frameSize"][2]
+        assert panel_bottom <= bottom, \
+            f"подложка короче списка: {panel_bottom:.3f} > {bottom:.3f}"
+        menu._build_root()
+    check("вёрстка меню", menu_layout)
 
     # --- sleeping, saving, loading ---------------------------------------
     check("сон", lambda: (setattr(app.player.pos, "x", app.props.bed_pos[0]),
