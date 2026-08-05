@@ -22,6 +22,7 @@ DEFAULTS = {
     "master_volume": 0.9,
     "music_volume": 0.45,
     "sfx_volume": 0.85,
+    "keys": {},
 }
 
 # Preset -> the graphics values it implies. Volumes are never touched by these.

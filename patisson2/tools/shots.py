@@ -250,6 +250,11 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     app.toggle_options()
     settle(3)
     shot("17c-options.png", hour=10.0)
+    app.options.cursor = len(app.options.rows()) - 1
+    app.options.confirm()
+    settle(3)
+    shot("17d-keys.png", hour=10.0)
+    app.options.back_to_main()
     app.close_options()
     settle(2)
 

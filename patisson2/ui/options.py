@@ -12,6 +12,7 @@ from direct.gui.OnscreenText import OnscreenText
 from panda3d.core import TextNode
 
 from .. import settings as S
+from ..input import ACTIONS, key_label
 
 INK = (0.96, 0.96, 0.94, 1)
 DIM = (0.78, 0.80, 0.78, 1)
@@ -38,6 +39,8 @@ class OptionsScreen:
         self.hud = hud
         self.visible = False
         self.cursor = 0
+        self.page = "main"          # main | keys
+        self.capturing = None       # action awaiting a keypress
         self.data = base.settings
 
         self.root = base.aspect2d.attachNewNode("options")
@@ -86,11 +89,62 @@ class OptionsScreen:
             ("Общая громкость", vol("master_volume")),
             ("Музыка", vol("music_volume")),
             ("Звуки", vol("sfx_volume")),
+            ("Управление…", "Enter"),
         ]
 
+    def key_rows(self):
+        b = self.base.bindings
+        rows = [(label, key_label(b.key_for(action)))
+                for action, label, _d, rebind in ACTIONS if rebind]
+        rows.append(("Сбросить всё", "Enter"))
+        rows.append(("Назад", "Esc"))
+        return rows
+
+    def rebindable(self):
+        return [a for a, _l, _d, rebind in ACTIONS if rebind]
+
+    def confirm(self) -> None:
+        """Enter: open the key list, start a capture, or run the row's action."""
+        if self.page == "main":
+            if self.cursor == len(self.rows()) - 1:
+                self.page = "keys"
+                self.cursor = 0
+                self.refresh()
+            return
+        rows = self.key_rows()
+        if self.cursor == len(rows) - 1:
+            self.back_to_main()
+        elif self.cursor == len(rows) - 2:
+            self.base.reset_bindings()
+            self.refresh()
+        else:
+            self.capturing = self.rebindable()[self.cursor]
+            self.base.begin_capture()
+            self.refresh()
+
+    def captured(self, key: str) -> None:
+        """A key arrived while we were waiting for one."""
+        action, self.capturing = self.capturing, None
+        if action is None:
+            return
+        error = self.base.rebind(action, key)
+        if error:
+            self.base.state.notify(error)
+        self.refresh()
+
+    def back_to_main(self) -> None:
+        self.page = "main"
+        self.cursor = 0
+        self.capturing = None
+        self.refresh()
+
     def change(self, delta: int) -> None:
+        if self.page == "keys":
+            return
         d = self.data
         key = self.cursor
+        if key >= len(self.rows()) - 1:
+            return
         if key == 0:
             preset = S.matching_preset(d)
             if preset == "custom":
@@ -118,7 +172,10 @@ class OptionsScreen:
         self.refresh()
 
     def move(self, delta: int) -> None:
-        self.cursor = (self.cursor + delta) % len(self.rows())
+        if self.capturing:
+            return
+        rows = self.key_rows() if self.page == "keys" else self.rows()
+        self.cursor = (self.cursor + delta) % len(rows)
         self.refresh()
 
     # --------------------------------------------------------------- control
@@ -132,11 +189,47 @@ class OptionsScreen:
         self.visible = False
         self.root.hide()
 
+    def _layout(self, scale: float, top: float, note_y: float) -> None:
+        """Both pages share the widgets, so re-lay them out on every switch."""
+        for node, x, align in ((self.body, -0.72, None), (self.values, 0.62, None)):
+            node.setScale(scale)
+            node.setPos(x, top)
+        self.note.setPos(-0.72, note_y)
+
     def refresh(self) -> None:
+        if self.page == "keys":
+            self._refresh_keys()
+            return
+        self.title.setText("Настройки")
+        self._layout(scale=0.052, top=0.50, note_y=-0.14)
+        pad = self.base.gamepad
+        self.note.setText(
+            "Разрешение задаётся при запуске:  python -m patisson2 --fullscreen"
+            + ("\nГеймпад: " + pad.name() if pad and pad.connected
+               else "\nГеймпад не найден"))
+        self.hint.setText("↑↓ — пункт · ←→ — изменить · Enter — управление · Esc — назад")
         labels, values = [], []
         for i, (label, value) in enumerate(self.rows()):
             mark = "›" if i == self.cursor else "  "
             labels.append(f"{mark} {label}")
             values.append(value)
+        self.body.setText("\n".join(labels))
+        self.values.setText("\n".join(values))
+
+    def _refresh_keys(self) -> None:
+        self.title.setText("Управление")
+        # Eighteen rows will not fit at the main page's size; shrink and lift.
+        self._layout(scale=0.040, top=0.58, note_y=-0.53)
+        self.note.setText(
+            "Геймпад настраивать не нужно: раскладка стандартная.\n"
+            "Стики — ходьба и обзор, A — прыжок, B — действие, X — удобрить.")
+        self.hint.setText("↑↓ — пункт · Enter — назначить · Esc — назад")
+        labels, values = [], []
+        for i, (label, value) in enumerate(self.key_rows()):
+            mark = "›" if i == self.cursor else "  "
+            labels.append(f"{mark} {label}")
+            values.append("нажмите клавишу…" if (self.capturing and
+                          i < len(self.rebindable()) and
+                          self.rebindable()[i] == self.capturing) else value)
         self.body.setText("\n".join(labels))
         self.values.setText("\n".join(values))

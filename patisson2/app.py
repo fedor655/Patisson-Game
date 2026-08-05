@@ -17,6 +17,7 @@ from panda3d.core import (
 
 from .audio.manager import AudioManager
 from . import settings as user_settings
+from .input import ACTIONS, Bindings, Gamepad, PAD_BUTTONS
 from .config import Config
 from .engine.pipeline import RenderPipeline
 from .game.cooking import POT_POSITION, Kitchen, item_name
@@ -76,6 +77,7 @@ class PatissonApp(ShowBase):
                              dict(user_settings.DEFAULTS), "high"))
         user_settings.apply_to_config(self.cfg, self.settings)
         self._persist_settings = use_settings
+        self.bindings = Bindings(self.settings.get("keys"))
         super().__init__()
         self.offscreen = offscreen
         self.disableMouse()
@@ -135,51 +137,137 @@ class PatissonApp(ShowBase):
     # ------------------------------------------------------------------ input
 
     def _setup_input(self):
-        binds = {
-            "w": "forward", "s": "back", "a": "left", "d": "right",
-            "space": "jump", "shift": "sprint",
-        }
+        self.gamepad = Gamepad(self)
+        self._bind_actions()
+        self._setup_fixed_input()
+
+    def _bind_actions(self):
+        """(Re)attach every rebindable action to whatever key it now uses."""
+        for action, _label, _default, _rebind in ACTIONS:
+            key = self.bindings.key_for(action)
+            if not key:
+                continue
+            if action in ("forward", "back", "left", "right", "sprint"):
+                self.accept(key, self._set_key, [action, True])
+                self.accept(f"{key}-up", self._set_key, [action, False])
+            else:
+                self.accept(key, self._fire_action, [action])
+
+    def _clear_action_keys(self):
+        for action, _label, _default, _rebind in ACTIONS:
+            key = self.bindings.key_for(action)
+            if key:
+                self.ignore(key)
+                self.ignore(f"{key}-up")
+
+    def _fire_action(self, action: str):
+        handler = {
+            "jump": lambda: None,          # movement handled by _set_key
+            "interact": self.on_interact,
+            "secondary": self.on_secondary,
+            "sell": self.on_sell,
+            "cycle_seed": lambda: self.state.cycle_seed(1),
+            "shop": self.toggle_shop,
+            "kitchen": self.toggle_kitchen,
+            "journal": self.toggle_journal,
+            "map": self.toggle_map,
+            "options": self.toggle_options,
+            "photo": self.toggle_photo_mode,
+            "save": self.on_save,
+            "load": self.on_load,
+        }.get(action)
+        if handler is not None:
+            handler()
+
+    def rebind(self, action: str, key: str) -> str | None:
+        """Point an action at a new key and re-attach every handler."""
+        self._clear_action_keys()
+        error = self.bindings.rebind(action, key)
+        self._bind_actions()
+        self.settings["keys"] = self.bindings.to_dict()
+        if self._persist_settings:
+            user_settings.save(self.settings)
+        return error
+
+    def reset_bindings(self):
+        self._clear_action_keys()
+        self.bindings.reset()
+        self._bind_actions()
+        self.settings["keys"] = {}
+        if self._persist_settings:
+            user_settings.save(self.settings)
+
+    def _setup_fixed_input(self):
         # Left/right double as value adjustment on the settings screen.
         for key, delta in (("arrow_left", -1), ("arrow_right", 1)):
             self.accept(key, self._on_side_arrow, [delta, True])
             self.accept(f"{key}-up", self._on_side_arrow, [delta, False])
-        for key, action in binds.items():
-            self.accept(key, self._set_key, [action, True])
-            self.accept(f"{key}-up", self._set_key, [action, False])
         # Up/down double as list navigation while a panel owns the screen.
         for key, action in (("arrow_up", "forward"), ("arrow_down", "back")):
             self.accept(key, self._on_arrow, [action, True])
             self.accept(f"{key}-up", self._on_arrow, [action, False])
 
         self.accept("escape", self.on_escape)
-        self.accept("e", self.on_interact)
         self.accept("mouse1", self.on_interact)
-        self.accept("mouse3", self.on_secondary)
-        self.accept("t", self.toggle_shop)
-        self.accept("j", self.toggle_journal)
-        self.accept("q", self.state.cycle_seed, [1])
         self.accept("wheel_up", self.on_wheel, [-1])
         self.accept("wheel_down", self.on_wheel, [1])
-        self.accept("f", self.on_sell)
         self.accept("f1", self.hud.toggle)
-        self.accept("f5", self.on_save)
-        self.accept("f9", self.on_load)
-        self.accept("p", self.toggle_photo_mode)
         self.accept("minus", self.nudge_volume, [-0.1])
         self.accept("=", self.nudge_volume, [0.1])
         self.accept("m", self.toggle_mute)
-        self.accept("k", self.toggle_kitchen)
-        self.accept("tab", self.toggle_map)
-        self.accept("o", self.toggle_options)
         self.accept("enter", self.on_confirm)
         for i in range(1, 6):
             self.accept(str(i), self.select_tool, [i - 1])
+
+        # A controller drives the same actions; its layout is conventional and
+        # therefore fixed rather than rebindable.
+        for button, action in PAD_BUTTONS.items():
+            self.accept(f"gp-{button}", self._on_pad_button, [action])
 
     def _on_side_arrow(self, delta, value):
         if value and self.options.visible:
             self.options.change(delta)
             return
         self.keys["right" if delta > 0 else "left"] = value
+
+    def _on_pad_button(self, action: str):
+        if action == "pause":
+            self.on_escape()
+        elif action == "panel_up":
+            self._on_arrow("forward", True)
+        elif action == "panel_down":
+            self._on_arrow("back", True)
+        elif action == "panel_left":
+            self._on_side_arrow(-1, True)
+        elif action == "panel_right":
+            self._on_side_arrow(1, True)
+        elif action == "jump":
+            self.keys["jump"] = True
+            self.taskMgr.doMethodLater(0.12, self._release_jump, "pad-jump")
+        else:
+            self._fire_action(action)
+
+    def _apply_gamepad(self, dt: float, blocked: bool) -> None:
+        """Fold stick positions into the same keys/look the keyboard drives."""
+        pad = getattr(self, "gamepad", None)
+        if pad is None or not pad.connected:
+            return
+        mx, my, lx, ly = pad.sticks()
+        if blocked:
+            return
+        self.keys["forward"] = my > 0.15
+        self.keys["back"] = my < -0.15
+        self.keys["right"] = mx > 0.15
+        self.keys["left"] = mx < -0.15
+        self.keys["sprint"] = (mx * mx + my * my) > 0.64
+        if lx or ly:
+            self.player.heading -= lx * 170.0 * dt
+            self.player.pitch = max(-89.0, min(89.0,
+                                               self.player.pitch + ly * 130.0 * dt))
+
+    def _release_jump(self, task):
+        self.keys["jump"] = False
+        return task.done
 
     def _set_key(self, action, value):
         self.keys[action] = value
@@ -353,7 +441,36 @@ class PatissonApp(ShowBase):
         self.options.open()
         self._grab_mouse(False)
 
+    def _button_thrower(self):
+        """None when there is no window to read buttons from (offscreen runs)."""
+        throwers = getattr(self, "buttonThrowers", None)
+        return throwers[0].node() if throwers else None
+
+    def begin_capture(self):
+        """Listen for the next raw button so it can be bound to an action."""
+        thrower = self._button_thrower()
+        if thrower is None:
+            return
+        thrower.setButtonDownEvent("rebind-button")
+        self.accept("rebind-button", self._on_capture)
+
+    def _on_capture(self, button):
+        thrower = self._button_thrower()
+        if thrower is not None:
+            thrower.setButtonDownEvent("")
+        self.ignore("rebind-button")
+        name = str(button)
+        if name == "escape":
+            self.options.capturing = None
+            self.options.refresh()
+            return
+        self.options.captured(name)
+
     def close_options(self):
+        if self.options.page == "keys":
+            self.options.back_to_main()
+            self.sound("click", 0.4)
+            return
         self.sound("click", 0.45)
         self.options.close()
         if self._persist_settings:
@@ -528,6 +645,9 @@ class PatissonApp(ShowBase):
         self.hud.refresh_panel()
 
     def on_confirm(self):
+        if self.options.visible:
+            self.options.confirm()
+            return
         if self.worldmap.visible:
             self.travel_to_selected()
             return
@@ -1006,6 +1126,7 @@ class PatissonApp(ShowBase):
             cam_pos = self.menu.update(dt, self.camera, self.world)
         else:
             before = Vec3(self.player.pos)
+            self._apply_gamepad(dt, blocked)
             self.player.update(dt, self.keys, blocked=blocked)
             self.player.apply_to_camera(self.camera)
             self._walked += (self.player.pos - before).length()
