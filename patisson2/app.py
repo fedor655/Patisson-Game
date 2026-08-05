@@ -773,7 +773,8 @@ class PatissonApp(ShowBase):
             self.props.apply_season(self.cycle.season)
         self.props.update(dt, self.cycle.total_time, night)
         self.villagers.update(dt if not blocked else 0.0, self.cycle.hour,
-                              self.cycle.total_time)
+                              self.cycle.total_time,
+                              None if in_menu else self.player.eye)
         p.update(dt, cam_pos, Vec3(cam_pos.x, cam_pos.y, cam_pos.z))
 
         if not in_menu and (23.5 <= self.cycle.hour or self.cycle.hour < 0.5):

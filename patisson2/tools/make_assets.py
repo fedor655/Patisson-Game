@@ -928,39 +928,102 @@ def make_fish():
             Part(eyes, "eyes", roughness=0.2)]
 
 
-def make_villager(shirt, trousers, hair_col=HAIR, seed: int = 1):
-    """A simple stylised villager, ~1.75 m, arms slightly out from the body."""
-    rng = _rng(seed)
+EYE_WHITE = srgb(244, 244, 240)
+EYE_DARK = srgb(38, 32, 28)
+MOUTH = srgb(150, 80, 72)
+
+# The rig, in metres. Parts are modelled around their own pivot so the runtime
+# can just rotate them: the hip carries the torso, the shoulders carry arms, the
+# hips carry legs.
+HIP_Z = 0.86
+SHOULDER_Z = 0.42        # above the hip
+SHOULDER_Y = 0.235
+HEAD_Z = 0.48            # above the hip
+LEG_Y = 0.115
+LEG_LEN = 0.46
+ARM_LEN = 0.50
+
+
+def make_villager_body(shirt, trousers):
+    """Torso and pelvis, pivoting at the hip. Forward is +Y."""
     cloth = Mesh()
+    # Torso, tapering to the shoulders.
+    cloth.extend(revolve([(0.185, -0.02), (0.215, 0.16), (0.205, 0.34),
+                          (0.175, 0.46)], 14, shirt).smooth(50))
+    # Pelvis.
+    cloth.extend(revolve([(0.185, -0.20), (0.205, -0.10), (0.190, -0.01)],
+                         12, trousers).smooth(50))
+    # A collar so the neck join is not a hard edge.
+    cloth.extend(revolve([(0.115, 0.44), (0.098, 0.49)], 12, shirt))
+    return [Part(cloth, "clothes", roughness=0.92)]
+
+
+def make_villager_head(hair_col, seed: int = 1):
+    """Head pivoting at the neck, face on +Y."""
+    rng = _rng(seed)
     skin = Mesh()
     hair = Mesh()
-    boots = Mesh()
-
-    cloth.extend(revolve([(0.20, 0.86), (0.22, 1.10), (0.20, 1.32)], 12, shirt).smooth(50))
-    cloth.extend(revolve([(0.19, 0.44), (0.21, 0.68), (0.20, 0.88)], 12, trousers).smooth(50))
-    for sy in (-0.115, 0.115):
-        cloth.extend(cylinder(0.075, 0.46, trousers, 8).translate(0, sy, 0.42))
-        boots.extend(box(0.20, 0.13, 0.10, srgb(72, 54, 42), origin="base")
-                     .translate(0.02, sy, 0.0))
-    for sy in (-0.26, 0.26):
-        arm = tube([(0, sy, 1.28), (0.02, sy * 1.12, 1.02), (0.05, sy * 1.05, 0.80)],
-                   [0.062, 0.055, 0.048], shirt, 8)
-        cloth.extend(arm)
-        skin.extend(sphere(0.055, SKIN, 10, 7).translate(0.06, sy * 1.05, 0.76))
-    skin.extend(cylinder(0.062, 0.09, SKIN, 8).translate(0, 0, 1.32))
-    head = sphere(0.145, SKIN, 14, 10).scale(0.92, 0.95, 1.06).translate(0, 0, 1.55)
-    skin.extend(head)
-    hair.extend(sphere(0.152, hair_col, 14, 10).scale(0.95, 0.98, 0.85)
-                .translate(0, 0, 1.60))
-    hair.extend(sphere(0.10, hair_col, 10, 7).scale(0.5, 0.9, 0.7).translate(-0.09, 0, 1.55))
     eyes = Mesh()
-    for sy in (-0.055, 0.055):
-        eyes.extend(sphere(0.019, srgb(40, 34, 30)).translate(0.115, sy, 1.575))
-    return [Part(cloth, "clothes", roughness=0.92),
-            Part(skin, "skin", roughness=0.72),
+    dark = Mesh()
+
+    skin.extend(cylinder(0.058, 0.07, SKIN, 10).translate(0, 0, -0.01))
+    head = sphere(0.148, SKIN, 16, 12).scale(0.94, 0.98, 1.06).translate(0, 0, 0.20)
+    skin.extend(head)
+    # Ears.
+    for sx in (-1, 1):
+        skin.extend(sphere(0.036, SKIN, 8, 6).scale(0.5, 0.9, 1.1)
+                    .translate(sx * 0.138, 0.0, 0.20))
+    # Nose.
+    skin.extend(sphere(0.030, SKIN, 8, 6).scale(0.8, 1.25, 0.8)
+                .translate(0.0, 0.140, 0.192))
+
+    # Eyes: white, then a dark iris set slightly proud of it.
+    for sx in (-0.058, 0.058):
+        eyes.extend(sphere(0.030, EYE_WHITE, 10, 8).scale(1.0, 0.55, 1.0)
+                    .translate(sx, 0.118, 0.235))
+        dark.extend(sphere(0.0155, EYE_DARK, 8, 6).scale(1.0, 0.6, 1.0)
+                    .translate(sx, 0.138, 0.233))
+    # Brows.
+    for sx in (-0.058, 0.058):
+        dark.extend(box(0.055, 0.018, 0.014, hair_col, origin="center")
+                    .rotate_y(rng.uniform(-6, 6))
+                    .translate(sx, 0.128, 0.281))
+    # Mouth.
+    dark.extend(box(0.058, 0.016, 0.014, MOUTH, origin="center")
+                .translate(0.0, 0.132, 0.148))
+
+    # Hair: a cap plus a fringe, sitting slightly back off the face.
+    hair.extend(sphere(0.156, hair_col, 14, 10).scale(0.96, 1.0, 0.92)
+                .translate(0, -0.012, 0.225))
+    hair.extend(sphere(0.10, hair_col, 10, 8).scale(1.25, 0.7, 0.55)
+                .translate(0, -0.085, 0.185))
+    return [Part(skin, "skin", roughness=0.72),
             Part(hair, "hair", roughness=0.86),
-            Part(boots, "boots", roughness=0.8),
-            Part(eyes, "eyes", roughness=0.25)]
+            Part(eyes, "eyes", roughness=0.22),
+            Part(dark, "features", roughness=0.35)]
+
+
+def make_villager_arm(shirt):
+    """Arm pivoting at the shoulder, hanging down -Z."""
+    cloth = Mesh()
+    skin = Mesh()
+    cloth.extend(tube([(0, 0, 0.03), (0, 0.01, -0.20), (0, 0.02, -0.38)],
+                      [0.068, 0.058, 0.050], shirt, 8))
+    skin.extend(sphere(0.052, SKIN, 10, 8).translate(0, 0.025, -0.44))
+    return [Part(cloth, "clothes", roughness=0.92),
+            Part(skin, "skin", roughness=0.72)]
+
+
+def make_villager_leg(trousers):
+    """Leg pivoting at the hip, hanging down -Z, boot at the bottom."""
+    cloth = Mesh()
+    boots = Mesh()
+    cloth.extend(tube([(0, 0, 0.02), (0, 0, -0.22), (0, 0, -0.40)],
+                      [0.082, 0.070, 0.062], trousers, 8))
+    boots.extend(box(0.13, 0.21, 0.10, srgb(72, 54, 42), origin="base")
+                 .translate(0, 0.025, -LEG_LEN))
+    return [Part(cloth, "clothes", roughness=0.92),
+            Part(boots, "boots", roughness=0.80)]
 
 
 # ------------------------------------------------------------------ driver
@@ -1002,11 +1065,21 @@ MODELS = {
     "cat": make_cat,
     "butterfly": make_butterfly,
     "fish": make_fish,
-    "villager_bogdan": lambda: make_villager(CLOTH_BLUE, srgb(78, 68, 60), HAIR, 1),
-    "villager_marina": lambda: make_villager(CLOTH_RED, srgb(64, 74, 96), srgb(158, 108, 52), 2),
-    "villager_pyotr": lambda: make_villager(srgb(104, 132, 88), srgb(84, 72, 58),
-                                            srgb(196, 190, 178), 3),
 }
+
+# Villagers are assembled at runtime from these parts so they can be posed.
+VILLAGERS = {
+    "bogdan": (CLOTH_BLUE, srgb(78, 68, 60), HAIR, 1),
+    "marina": (CLOTH_RED, srgb(64, 74, 96), srgb(158, 108, 52), 2),
+    "pyotr": (srgb(104, 132, 88), srgb(84, 72, 58), srgb(196, 190, 178), 3),
+}
+for _key, (_shirt, _trousers, _hair, _seed) in VILLAGERS.items():
+    MODELS[f"villager_{_key}_body"] = (
+        lambda sh=_shirt, tr=_trousers: make_villager_body(sh, tr))
+    MODELS[f"villager_{_key}_head"] = (
+        lambda hc=_hair, sd=_seed: make_villager_head(hc, sd))
+    MODELS[f"villager_{_key}_arm"] = (lambda sh=_shirt: make_villager_arm(sh))
+    MODELS[f"villager_{_key}_leg"] = (lambda tr=_trousers: make_villager_leg(tr))
 
 
 def build_all(out_dir: Path = OUT_DIR) -> None:

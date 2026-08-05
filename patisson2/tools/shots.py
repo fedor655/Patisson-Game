@@ -150,7 +150,13 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     shot("08-barn.png", hour=11.0)
 
     # 7. Market stall with a villager.
-    look_at(app.player, (-13.0, -2.0, 1.4), (-7.0, -6.0, gz(-7.0, -6.0)))
+    # Put a villager at the stall so the market shot has a person in it.
+    seller = app.villagers.npcs[1]
+    seller.schedule = [(0.0, (-14.1, -2.6), "торгует")]
+    seller.node.setPos(-14.1, -2.6, gz(-14.1, -2.6))
+    seller.node.setH(118)
+    settle(3)
+    look_at(app.player, (-13.2, -2.4, 1.35), (-8.8, -5.6, gz(-8.8, -5.6)))
     st.coins = 385
     st.give("patisson", 4)
     st.fish = 6
