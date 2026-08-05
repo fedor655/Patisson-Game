@@ -132,7 +132,8 @@ class PatissonApp(ShowBase):
         self.paused = False
         self.fishing = Fishing(random.Random(self.cfg.world.seed ^ 0xF15))
         self.photo_mode = False
-        self.worldmap = WorldMap(self, self.hud, self.world, self.cfg.world)
+        self.worldmap = WorldMap(self, self.hud, self.world, self.cfg.world,
+                                 self.props)
         self.options = OptionsScreen(self, self.hud)
         self.tutorial = Tutorial()
         self._walked = 0.0

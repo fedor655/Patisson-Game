@@ -15,12 +15,14 @@ from direct.gui.OnscreenImage import OnscreenImage
 from direct.gui.OnscreenText import OnscreenText
 from panda3d.core import SamplerState, TextNode, Texture, TransparencyAttrib
 
-from ..world.layout import LAYOUT
+from ..world.layout import (BUILDING_SHAPES, LAYOUT, PLOT_COLS, PLOT_ORIGIN,
+                            PLOT_ROWS, PLOT_SPACING)
 from ..world.terrain import POND_CENTRE
 
-MAP_RES = 384
-# Half-width of the area drawn, in metres. The farm and its woods, not the rim.
-MAP_EXTENT = 120.0
+MAP_RES = 512
+# Half-width of the area drawn, in metres. At 120 the farm was a thumbnail in
+# the middle of an empty meadow: everything a player needs is inside 70 m.
+MAP_EXTENT = 72.0
 
 INK = (0.96, 0.96, 0.94, 1)
 DIM = (0.78, 0.80, 0.78, 1)
@@ -57,7 +59,52 @@ MARKER_COLOURS = {
 TRAVEL_SPEED = 3.4
 
 
-def build_map_texture(terrain, cfg) -> Texture:
+def _px(v: float) -> float:
+    """World metres -> pixel coordinate in the map image."""
+    return (v + MAP_EXTENT) / (2.0 * MAP_EXTENT) * (MAP_RES - 1)
+
+
+def _stamp_disc(rgb, x: float, y: float, radius: float, colour, softness=0.6):
+    """Paint a soft disc of world-space radius at a world-space point."""
+    cx, cy = _px(x), _px(y)
+    r = radius / (2.0 * MAP_EXTENT) * (MAP_RES - 1)
+    lo_x, hi_x = int(max(0, cx - r - 1)), int(min(MAP_RES, cx + r + 2))
+    lo_y, hi_y = int(max(0, cy - r - 1)), int(min(MAP_RES, cy + r + 2))
+    if lo_x >= hi_x or lo_y >= hi_y:
+        return
+    gx = np.arange(lo_x, hi_x)[:, None] - cx
+    gy = np.arange(lo_y, hi_y)[None, :] - cy
+    d = np.sqrt(gx * gx + gy * gy)
+    a = np.clip((r - d) / max(r * softness, 0.75), 0.0, 1.0)[..., None]
+    patch = rgb[lo_x:hi_x, lo_y:hi_y]
+    rgb[lo_x:hi_x, lo_y:hi_y] = patch * (1 - a) + np.array(colour, np.float32) * a
+
+
+def _stamp_rect(rgb, x: float, y: float, w: float, d: float, heading: float,
+                colour):
+    """Paint a rotated rectangle — a building footprint."""
+    a = math.radians(heading)
+    ca, sa = math.cos(a), math.sin(a)
+    span = (abs(w * ca) + abs(d * sa) + abs(w * sa) + abs(d * ca)) / 2.0
+    cx, cy = _px(x), _px(y)
+    r = span / (2.0 * MAP_EXTENT) * (MAP_RES - 1)
+    lo_x, hi_x = int(max(0, cx - r - 1)), int(min(MAP_RES, cx + r + 2))
+    lo_y, hi_y = int(max(0, cy - r - 1)), int(min(MAP_RES, cy + r + 2))
+    if lo_x >= hi_x or lo_y >= hi_y:
+        return
+    scale = (2.0 * MAP_EXTENT) / (MAP_RES - 1)
+    wx = (np.arange(lo_x, hi_x)[:, None] - cx) * scale
+    wy = (np.arange(lo_y, hi_y)[None, :] - cy) * scale
+    # Into the building's own frame, the way props place their furniture.
+    lx = wx * ca + wy * sa
+    ly = -wx * sa + wy * ca
+    inside = (np.abs(lx) <= w / 2.0) & (np.abs(ly) <= d / 2.0)
+    patch = rgb[lo_x:hi_x, lo_y:hi_y]
+    rgb[lo_x:hi_x, lo_y:hi_y] = np.where(inside[..., None],
+                                         np.array(colour, np.float32), patch)
+
+
+def build_map_texture(terrain, cfg, props=None) -> Texture:
     """Shade the height field into a paper-map image."""
     res = MAP_RES
     xs = np.linspace(-MAP_EXTENT, MAP_EXTENT, res)
@@ -109,6 +156,26 @@ def build_map_texture(terrain, cfg) -> Texture:
     rgb = np.where(land[..., None], ground, rgb)
     rgb *= shade[..., None]
 
+    # The height field alone draws a bare meadow. Everything a player uses to
+    # find their way — the wood, the buildings, the beds — is props data, and
+    # stamping it here keeps the map honest: it is the same list the world was
+    # built from, not a second drawing that can drift out of step.
+    if props is not None:
+        for tx, ty, _tz in getattr(props, "trees", ()):
+            _stamp_disc(rgb, tx, ty, 1.9, (0.24, 0.40, 0.22))
+        ox, oy = PLOT_ORIGIN
+        _stamp_rect(rgb, ox + (PLOT_COLS - 1) * PLOT_SPACING / 2.0,
+                    oy + (PLOT_ROWS - 1) * PLOT_SPACING / 2.0,
+                    (PLOT_COLS - 1) * PLOT_SPACING + 3.2,
+                    (PLOT_ROWS - 1) * PLOT_SPACING + 3.2, 0.0,
+                    (0.44, 0.32, 0.22))
+        for name, (w, d, _door) in BUILDING_SHAPES.items():
+            bx, by, bh = LAYOUT[name]
+            _stamp_rect(rgb, bx, by, w + 0.6, d + 0.6, bh, (0.30, 0.26, 0.24))
+            _stamp_rect(rgb, bx, by, w - 0.8, d - 0.8, bh,
+                        (0.72, 0.34, 0.28) if name == "house"
+                        else (0.62, 0.28, 0.26))
+
     # A soft parchment vignette so it reads as a drawing, not a data plot.
     yy, xx = np.mgrid[0:res, 0:res]
     r = np.sqrt(((xx / res) - 0.5) ** 2 + ((yy / res) - 0.5) ** 2)
@@ -136,7 +203,7 @@ class WorldMap:
 
     SIZE = 0.72          # half-height on screen, in aspect2d units
 
-    def __init__(self, base, hud, world, cfg):
+    def __init__(self, base, hud, world, cfg, props=None):
         self.base = base
         self.hud = hud
         self.world = world
@@ -145,7 +212,7 @@ class WorldMap:
         self.cursor = 0
         self.landmarks = _landmarks()
 
-        self.texture = build_map_texture(world.terrain, cfg)
+        self.texture = build_map_texture(world.terrain, cfg, props)
 
         self.root = base.aspect2d.attachNewNode("worldmap")
         self.root.hide()
@@ -184,6 +251,13 @@ class WorldMap:
                             frameSize=(-0.012, 0.012, -0.012, 0.012))
             m.setBin("fixed", 3)
             self.marks.append(m)
+        # Eight identical squares told you nothing about which was which. The
+        # selected one says its name on the map, next to the list.
+        self.mark_label = OnscreenText(text="", pos=(0, 0), scale=0.038, fg=GOLD,
+                                       font=hud.font, align=TextNode.ACenter,
+                                       parent=self.root, mayChange=True,
+                                       shadow=(0, 0, 0, 0.85))
+        self.mark_label.setBin("fixed", 5)
 
         self.npc_marks = [
             DirectFrame(parent=self.root, frameColor=(0.85, 0.72, 1.0, 0.95),
@@ -247,11 +321,16 @@ class WorldMap:
     def update(self, player_pos, player_heading: float, villagers) -> None:
         if not self.visible:
             return
-        for i, (_label, (x, y), _kind) in enumerate(self.landmarks):
+        for i, (label, (x, y), _kind) in enumerate(self.landmarks):
             sx, sy = self._to_screen(x, y)
             self.marks[i].setPos(sx, 0, sy)
             scale = 1.55 if i == self.cursor else 1.0
             self.marks[i].setScale(scale)
+            if i == self.cursor:
+                # Above the marker, unless that would run off the top edge.
+                up = sy + 0.045 < 0.02 + self.SIZE - 0.03
+                self.mark_label.setText(label)
+                self.mark_label.setPos(sx, sy + (0.045 if up else -0.075))
 
         for i, npc in enumerate(villagers.npcs[:len(self.npc_marks)]):
             p = npc.node.getPos()

@@ -516,6 +516,11 @@ class HUD:
             self._set(self.tutor_head, f"ОБУЧЕНИЕ  {done}/{total}")
             self._set(self.tutor_title, step.title)
             self._set(self.tutor_hint, step.hint)
+        # Four of the ten hints wrap to two lines, and the second line used to
+        # hang below the panel over the scenery. Grow the frame to the text.
+        rows = self.tutor_hint.textNode.getNumRows()
+        bottom = -0.122 - rows * 0.036 * 1.25 + 0.010
+        self.tutor_panel["frameSize"] = (-0.02, 0.86, bottom, 0.055)
 
     def _update_fishing(self):
         """Draw the reel bar: a sweeping marker and the band to stop it in."""

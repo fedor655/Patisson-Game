@@ -248,6 +248,64 @@ def run() -> int:
         menu._build_root()
     check("вёрстка меню", menu_layout)
 
+    def tutorial_panel():
+        """Every step's hint must be shorter than the panel it is drawn on.
+
+        Four of the ten hints wrap to a second line, which used to hang below
+        the panel over the scenery. Panda's own text bounds under-report a
+        wrapped block, so this measures the panel against the row count.
+        """
+        from ..game.tutorial import STEPS
+        app.tutorial.active = True
+        seen = set()
+        for i in range(len(STEPS) + 1):
+            app.tutorial.index = i
+            app.hud._update_tutorial()
+            app.taskMgr.step()
+            hint = app.hud.tutor_hint
+            rows = hint.textNode.getNumRows()
+            seen.add(rows)
+            need = -0.122 - rows * hint.getScale()[0] * 1.25
+            bottom = app.hud.tutor_panel["frameSize"][2]
+            assert bottom <= need + 0.011, (
+                f"шаг {i}: {rows} строк(и) не помещаются "
+                f"({bottom:.3f} > {need:.3f})")
+        assert max(seen) > 1, "ни одна подсказка не переносится — проверка пустая"
+    check("панель обучения", tutorial_panel)
+
+    def map_texture():
+        """Specific places on the map must look like what stands there.
+
+        The map used to be shaded from the height field alone: a smooth green
+        field with the farm as a thumbnail in the middle of it. Counting
+        coloured pixels is not enough to catch that — bare hillside is reddish
+        too — so this reads the pixel at each landmark.
+        """
+        import numpy as np
+        from ..ui.worldmap import _px
+        from ..world.layout import LAYOUT
+        from ..world.terrain import POND_CENTRE
+        tex = app.worldmap.texture
+        data = np.frombuffer(tex.getRamImage().getData(), np.uint8)
+        data = data.reshape(tex.getYSize(), tex.getXSize(), 4)
+
+        def at(x, y):                       # texture rows are y, columns x
+            b, g, r, _a = data[int(_px(y)), int(_px(x))]
+            return int(r), int(g), int(b)
+
+        for name in ("house", "barn"):
+            bx, by, _h = LAYOUT[name]
+            r, g, b = at(bx, by)
+            assert r > g + 55 and r > 120, f"{name} не нарисован: rgb {r},{g},{b}"
+        r, g, b = at(*POND_CENTRE)
+        assert b > r + 40, f"пруд не нарисован: rgb {r},{g},{b}"
+        # A tree, and open ground two metres to its side, must differ.
+        tx, ty, _tz = app.props.trees[0]
+        tr, tg, tb = at(tx, ty)
+        orr, og, ob = at(tx + 6.0, ty + 6.0)
+        assert tg < og - 12, f"лес не нарисован: дерево {tg} vs поле {og}"
+    check("карта нарисована", map_texture)
+
     # --- sleeping, saving, loading ---------------------------------------
     check("сон", lambda: (setattr(app.player.pos, "x", app.props.bed_pos[0]),
                           setattr(app.player.pos, "y", app.props.bed_pos[1]),
