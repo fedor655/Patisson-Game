@@ -310,6 +310,93 @@ def run() -> int:
     check("сон", lambda: (setattr(app.player.pos, "x", app.props.bed_pos[0]),
                           setattr(app.player.pos, "y", app.props.bed_pos[1]),
                           app.on_interact()))
+    def round_trip():
+        """Save a distinctive world, wreck it, load it, compare every field.
+
+        "Did load_game raise?" is not the question. The question is whether
+        what you saved is what comes back — the weather did not, so a game
+        saved in the rain loaded into sunshine and the villagers walked back
+        out from under their roofs.
+        """
+        def snap():
+            return {
+                "coins": st.coins, "fish": st.fish, "water": round(st.water, 4),
+                "inventory": dict(st.inventory),
+                "upgrades": dict(vars(st.upgrades)),
+                "achievements": sorted(st.achievements),
+                "cooked": dict(st.cooked),
+                "fish_log": {k: list(v) for k, v in st.fish_log.items()},
+                "total_earned": st.total_earned,
+                "best_fish": list(st.best_fish) if st.best_fish else None,
+                "quests": [(q.key, q.progress, q.done) for q in st.quests],
+                "plots": [(p.crop, round(p.progress, 4), round(p.water, 4),
+                           round(p.weeds, 4), round(p.blight, 4), p.tilled)
+                          for p in app.farm.plots],
+                "harvest_log": dict(app.farm.harvest_log),
+                "livestock": [(round(s.fed, 4), round(s.progress, 4), s.ready)
+                              for _a, s in app.livestock.animals()],
+                "scarecrow": round(app.pests.scarecrow.condition, 4),
+                "tutorial": (app.tutorial.index, app.tutorial.active),
+                "clock": round(app.cycle.total_time, 3),
+                "player": (round(app.player.pos.x, 3), round(app.player.pos.y, 3)),
+                "met": sorted(n.key for n in app.villagers.npcs if n.met),
+                "weather": app.weather,
+            }
+
+        st.coins = 1234
+        st.give("seed_pumpkin", 4)
+        st.buy("tool_hoe")
+        st.unlock("first_seed")
+        st.add_fish("pike", 4.4)
+        st.total_earned = 4321
+        st.quests[0].progress, st.quests[0].done = 1, True
+        for i, plot in enumerate(app.farm.plots[:6]):
+            plot.tilled = True
+            plot.crop = ("patisson", "carrot", "tomato")[i % 3]
+            plot.progress, plot.water = 0.11 * (i + 1), 0.07 * i
+            plot.weeds, plot.blight = 0.09 * i, 0.04 * i
+        app.farm.harvest_log["patisson"] = 12
+        for idx, (_a, s) in enumerate(app.livestock.animals()):
+            s.fed, s.progress, s.ready = 0.3 + 0.05 * idx, 0.2, idx % 3 == 0
+        app.pests.scarecrow.condition = 0.42
+        app.tutorial.index = 4
+        app.cycle.total_time = 3210.5
+        app.player.pos.x, app.player.pos.y = -12.5, 21.25
+        app.villagers.npcs[1].met = True
+        app.weather = "rain"
+
+        before = snap()
+        app.write_save(3)
+        st.coins, st.total_earned = 1, 0
+        st.inventory.clear()
+        st.achievements.clear()
+        st.fish_log.clear()
+        st.best_fish = None
+        st.upgrades.hoe = 1
+        for q in st.quests:
+            q.progress, q.done = 0, False
+        for plot in app.farm.plots:
+            plot.crop, plot.progress, plot.water = None, 0.0, 0.0
+            plot.weeds, plot.blight, plot.tilled = 0.0, 0.0, False
+        app.farm.harvest_log.clear()
+        for _a, s in app.livestock.animals():
+            s.fed, s.progress, s.ready = 0.0, 0.0, False
+        app.pests.scarecrow.condition = 1.0
+        app.tutorial.index, app.tutorial.active = 0, True
+        app.cycle.total_time = 0.0
+        app.player.pos.x, app.player.pos.y = 0.0, 0.0
+        for n in app.villagers.npcs:
+            n.met = False
+        app.weather = "clear"
+
+        assert app.load_slot(3), "слот 3 не прочитался"
+        after = snap()
+        wrong = [k for k in before if before[k] != after[k]]
+        assert not wrong, "\n".join(
+            [f"не восстановилось: {', '.join(wrong)}"]
+            + [f"  {k}: было {before[k]!r}, стало {after[k]!r}" for k in wrong])
+    check("сохранение восстанавливает всё", round_trip)
+
     check("сохранение", app.on_save)
     check("автосохранение", app.autosave)
     check("загрузка", app.on_load)

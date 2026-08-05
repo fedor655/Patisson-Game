@@ -39,7 +39,7 @@ from .world.daynight import DayNightCycle
 from .world.layout import indoors_at
 from .world.props import Props, plot_positions
 from .world.soundscape import Soundscape
-from .world.weather import Precipitation
+from .world.weather import Precipitation, WeatherState
 from .world.world import World
 
 # Real seconds between automatic saves.
@@ -124,8 +124,7 @@ class PatissonApp(ShowBase):
         for x, y in plot_positions():
             self.farm.add_plot(x, y)
 
-        self.weather = "clear"
-        self.weather_timer = 40.0
+        self.weather_state = WeatherState()
         self.rng = random.Random(self.cfg.world.seed ^ 0x5EED)
 
         self.keys = {}
@@ -387,9 +386,14 @@ class PatissonApp(ShowBase):
         ok = load_game(self.state, self.farm, self.cycle, self.player,
                        livestock=self.livestock, pests=self.pests,
                        tutorial=self.tutorial, slot=slot,
-                       villagers=self.villagers)
+                       villagers=self.villagers,
+                       weather=self.weather_state)
         if ok:
             from .game.state import slot_label
+            # Put the sky where the save left it rather than fading in from
+            # clear, and let the villagers decide about shelter on frame one.
+            self.precip.set_weather(self.weather)
+            self.precip.snap()
             self.state.notify(f"Загружено: {slot_label(slot)}")
         return ok
 
@@ -710,7 +714,8 @@ class PatissonApp(ShowBase):
         return save_game(self.state, self.farm, self.cycle, self.player,
                          livestock=self.livestock, pests=self.pests,
                          tutorial=self.tutorial, slot=slot,
-                         villagers=self.villagers)
+                         villagers=self.villagers,
+                       weather=self.weather_state)
 
     def autosave(self, reason: str = ""):
         """Quiet, frequent, and always to its own slot — never over a manual one."""
@@ -1137,6 +1142,24 @@ class PatissonApp(ShowBase):
             self.state.notify("Не успели подсечь")
 
     # ---------------------------------------------------------------- weather
+
+    # The sky's state lives in one saveable object; these keep every existing
+    # `self.weather` / `self.weather_timer` call site working unchanged.
+    @property
+    def weather(self) -> str:
+        return self.weather_state.kind
+
+    @weather.setter
+    def weather(self, value: str) -> None:
+        self.weather_state.kind = value
+
+    @property
+    def weather_timer(self) -> float:
+        return self.weather_state.timer
+
+    @weather_timer.setter
+    def weather_timer(self, value: float) -> None:
+        self.weather_state.timer = value
 
     def _update_weather(self, dt: float):
         self.weather_timer -= dt

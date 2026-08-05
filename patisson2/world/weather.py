@@ -20,6 +20,27 @@ from panda3d.core import (
 from ..engine.pipeline import MASK_SHADOW
 from ..engine.shaderlib import make_shader
 
+
+class WeatherState:
+    """What the sky is doing, and how long until it changes its mind.
+
+    Kept as an object rather than two attributes on the app so it can be saved
+    with everything else: a game saved in the rain used to load into sunshine,
+    which also sent the villagers back out from under their roofs.
+    """
+
+    def __init__(self, kind: str = "clear", timer: float = 40.0):
+        self.kind = kind
+        self.timer = timer
+
+    def to_dict(self) -> dict:
+        return {"kind": self.kind, "timer": self.timer}
+
+    def from_dict(self, data: dict) -> None:
+        kind = data.get("kind", "clear")
+        self.kind = kind if kind in ("clear", "cloudy", "rain", "snow") else "clear"
+        self.timer = float(data.get("timer", 40.0))
+
 # (instances, box, particle size, fall speed, sway, tint, opacity, round?)
 PRESETS = {
     "rain": dict(count=64_000, box=Vec3(40.0, 40.0, 22.0), size=Vec2(0.017, 1.15),
