@@ -23,6 +23,7 @@ from .game.farming import CROPS, CROP_ORDER, Farm
 from .game.fishing import BITE, IDLE, REELING, WAITING, Fishing
 from .game.livestock import FEED_ITEM, SPECIES, Livestock
 from .game.npc import Villagers
+from .game.pests import Pests
 from .game.player import Player
 from .game.state import GameState, load_game, save_game, shop_entries
 from .ui.hud import HUD
@@ -78,6 +79,8 @@ class PatissonApp(ShowBase):
         self.props = Props(self, self.world, self.pipeline)
         self.farm = Farm(self, self.world, self.props, self.cfg.game.day_length)
         self.villagers = Villagers(self, self.world, self.props)
+        self.pests = Pests(self, self.world, self.props, self.farm,
+                           self.cfg.game.day_length)
         self.precip = Precipitation(self, self.world, self.pipeline)
         self.livestock = Livestock(self, self.world, self.props,
                                    self.cfg.game.day_length)
@@ -214,7 +217,7 @@ class PatissonApp(ShowBase):
     def menu_continue(self):
         self.sound("click", 0.6)
         if load_game(self.state, self.farm, self.cycle, self.player,
-                     livestock=self.livestock):
+                     livestock=self.livestock, pests=self.pests):
             self._enter_world()
             self.state.notify("Игра загружена")
         else:
@@ -385,7 +388,7 @@ class PatissonApp(ShowBase):
 
     def on_load(self):
         if load_game(self.state, self.farm, self.cycle, self.player,
-                     livestock=self.livestock):
+                     livestock=self.livestock, pests=self.pests):
             self.state.notify("Игра загружена")
         else:
             self.state.notify("Сохранение не найдено")
@@ -476,6 +479,9 @@ class PatissonApp(ShowBase):
         st = self.state
         if self._near_bed():
             return "[E] Лечь спать", "до утра"
+        crow = self.pests.scarecrow
+        if (self.player.pos - crow.pos).lengthSquared() < 6.0:
+            return "[E] Поправить пугало", f"состояние: {crow.status()}"
         npc = self.villagers.nearest(self.player.pos, 2.8)
         if npc is not None:
             return f"[E] Поговорить — {npc.name}", npc.activity
@@ -506,6 +512,8 @@ class PatissonApp(ShowBase):
         plot, _ = self._aim_plot()
         if tool == "hoe":
             if plot is not None and plot.crop is None and plot.tilled:
+                if plot is not None and plot.weeds >= 0.05:
+                    return "[E] Прополоть", f"Сорняки: {plot.weeds*100:.0f}%"
                 return "", "Грядка уже вскопана"
             return "[E] Вскопать грядку", "Смотрите на землю"
         if tool == "can":
@@ -514,7 +522,12 @@ class PatissonApp(ShowBase):
             if plot is not None and plot.crop is not None:
                 if st.water < 1.0:
                     return "", "Лейка пуста — наберите у колодца"
-                return "[E] Полить", f"Влага: {plot.water*100:.0f}%"
+                note = f"Влага: {plot.water*100:.0f}%"
+                if plot.sick:
+                    note += "  ·  гниль — нужна зола (ПКМ)"
+                elif plot.weedy:
+                    note += "  ·  сорняки — прополите мотыгой"
+                return "[E] Полить", note
             return "", ""
         if tool == "seeds":
             crop = CROPS[st.seed_key]
@@ -533,7 +546,12 @@ class PatissonApp(ShowBase):
             if plot is not None and plot.ripe:
                 return f"[E] Собрать: {CROPS[plot.crop].name}", ""
             if plot is not None and plot.crop is not None:
-                return "", f"Зреет: {plot.progress*100:.0f}%"
+                note = f"Зреет: {plot.progress*100:.0f}%"
+                if plot.sick:
+                    note += "  ·  поражено гнилью"
+                elif plot.weedy:
+                    note += "  ·  заросло сорняками"
+                return "", note
         return "", ""
 
     def on_interact(self):
@@ -546,6 +564,15 @@ class PatissonApp(ShowBase):
 
         if self._near_bed():
             self._sleep()
+            return
+        crow = self.pests.scarecrow
+        if (self.player.pos - crow.pos).lengthSquared() < 6.0:
+            if crow.repair():
+                self.sound("plant", 0.7)
+                st.notify("Пугало поправлено")
+            else:
+                self.sound("error", 0.5)
+                st.notify("Пугало и так в порядке")
             return
         npc = self.villagers.nearest(self.player.pos, 2.8)
         if npc is not None:
@@ -586,6 +613,15 @@ class PatissonApp(ShowBase):
 
         if tool == "hoe":
             if plot is None and target is not None:
+                weedy = self.farm.nearest(target, 1.0)
+                if weedy is not None and weedy.weeds >= 0.05:
+                    self.farm.weed(weedy)
+                    self.sound("dig", 0.7)
+                    st.weeded = getattr(st, "weeded", 0) + 1
+                    if st.weeded >= 20:
+                        st.unlock("gardener")
+                    st.notify("Грядка прополота")
+                    return
                 from .world.layout import PLOT_SPACING
                 dug = 0
                 for ox, oy in st.upgrades.till_pattern:
@@ -684,6 +720,15 @@ class PatissonApp(ShowBase):
             self.sound("error", 0.6)
             self.state.notify("Нет удобрения (купите в лавке)")
             return
+        if plot.sick:
+            if self.state.take("ash"):
+                self.farm.cure(plot)
+                self.sound("plant", 0.8)
+                self.state.notify("Гниль вылечена золой")
+            else:
+                self.sound("error", 0.6)
+                self.state.notify("Нужна зола (купите в лавке)")
+            return
         self.farm.feed_plot(plot)
         self.sound("plant", 0.7)
         self.state.notify("Удобрено")
@@ -775,7 +820,12 @@ class PatissonApp(ShowBase):
             self.cycle.advance(dt)
             self._update_weather(dt)
             self._update_fishing(dt)
-            events = self.farm.update(dt, self.cycle.season, self.weather == "rain")
+            raining = self.weather == "rain"
+            for line in self.pests.update(dt, self.player.pos, raining):
+                st.notify(line)
+                if line.startswith("Ворона улетела"):
+                    st.unlock("crow_chaser")
+            events = self.farm.update(dt, self.cycle.season, raining)
             self.livestock.update(dt)
             for e in events:
                 st.notify(e)

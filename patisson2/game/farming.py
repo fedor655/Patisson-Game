@@ -7,12 +7,16 @@ everything for free, and each crop only thrives in its own seasons.
 
 from __future__ import annotations
 
+import random
+
 import math
 from dataclasses import dataclass, field
 
 from panda3d.core import NodePath, Vec3
 
 from ..world.props import place
+from .pests import (BLIGHT_DAILY_CHANCE, BLIGHT_SOGGY,
+                    WEED_SLOW, WEED_START, WEED_THIRST)
 
 
 @dataclass(frozen=True)
@@ -69,11 +73,23 @@ class Plot:
     tilled: bool = False
     node: NodePath | None = None
     stage: int = -1
+    weeds: float = 0.0           # 0..1, choke the crop if left alone
+    blight: float = 0.0          # 0..1, halts growth until treated
+    weed_node: NodePath | None = None
     _wither_warned: bool = False
+    _blight_warned: bool = False
 
     @property
     def ripe(self) -> bool:
         return self.crop is not None and self.progress >= 1.0
+
+    @property
+    def weedy(self) -> bool:
+        return self.weeds >= 0.30
+
+    @property
+    def sick(self) -> bool:
+        return self.blight >= 0.05
 
     @property
     def pos(self) -> Vec3:
@@ -92,6 +108,7 @@ class Farm:
         props.pipeline.apply_scene_shader(self.root, wind=0.35, wind_pivot=0.02)
         self.plots: list[Plot] = []
         self.harvest_log: dict[str, int] = {}
+        self.rng = random.Random(0xC0FFEE)
 
     # -------------------------------------------------------------- plots
 
@@ -148,6 +165,35 @@ class Farm:
         plot.food = min(1.0, plot.food + amount)
         return True
 
+    def _refresh_weeds(self, plot: Plot) -> None:
+        """Show a tuft once the weeds are worth noticing."""
+        want = plot.weeds >= WEED_START
+        if want and plot.weed_node is None:
+            plot.weed_node = place(self.props.dynamic, "weeds",
+                                   (plot.x, plot.y, plot.z + 0.02),
+                                   (plot.x * 37 + plot.y * 11) % 360, 1.0)
+        elif not want and plot.weed_node is not None:
+            plot.weed_node.removeNode()
+            plot.weed_node = None
+        if plot.weed_node is not None:
+            scale = 0.55 + 0.75 * plot.weeds
+            plot.weed_node.setScale(scale)
+
+    def weed(self, plot: Plot) -> bool:
+        """Hoe the weeds out of a bed."""
+        if plot.weeds < 0.05:
+            return False
+        plot.weeds = 0.0
+        self._refresh_weeds(plot)
+        return True
+
+    def cure(self, plot: Plot) -> bool:
+        if not plot.sick:
+            return False
+        plot.blight = 0.0
+        plot._blight_warned = False
+        return True
+
     def harvest(self, plot: Plot, basket_bonus: int = 0) -> tuple[str, int] | None:
         if not plot.ripe:
             return None
@@ -166,6 +212,8 @@ class Farm:
         plot.crop = None
         plot.progress = 0.0
         plot.stage = -1
+        plot.blight = 0.0
+        plot._blight_warned = False
         self._clear_model(plot)
 
     # -------------------------------------------------------------- update
@@ -182,17 +230,41 @@ class Farm:
                 continue
 
             crop = CROPS[plot.crop]
-            plot.water = max(0.0, plot.water - day_frac * 1.35 * crop.thirst)
+
+            # Weeds creep in faster on damp, well-fed ground.
+            weed_rate = 0.95 * (0.55 + 0.45 * plot.water) * (0.7 + 0.3 * plot.food)
+            if season == 3:
+                weed_rate *= 0.25            # little grows in winter
+            plot.weeds = min(1.0, plot.weeds + day_frac * weed_rate)
+
+            thirst = 1.35 * crop.thirst
+            if plot.weeds >= WEED_THIRST:
+                thirst *= 1.7                # the weeds are drinking it too
+            plot.water = max(0.0, plot.water - day_frac * thirst)
             plot.food = max(0.0, plot.food - day_frac * 0.85)
 
+            # Blight takes hold in sodden beds, and spreads once it has.
+            if plot.blight <= 0.0:
+                soggy = plot.water >= BLIGHT_SOGGY and (raining or plot.food > 0.75)
+                if soggy and self.rng.random() < day_frac * BLIGHT_DAILY_CHANCE:
+                    plot.blight = 0.35
+            else:
+                plot.blight = min(1.0, plot.blight + day_frac * 0.55)
+                plot.health = max(0.0, plot.health - day_frac * 0.9)
+                if not plot._blight_warned:
+                    plot._blight_warned = True
+                    events.append(f"{crop.name} поразила гниль — нужна зола.")
+
             healthy = plot.water > 0.04 and plot.food > 0.02
-            if healthy:
+            if healthy and not plot.sick:
                 plot.health = min(1.0, plot.health + day_frac * 1.2)
                 rate = 1.0 / crop.grow_days
                 if season not in crop.seasons:
                     rate *= 0.28      # out of season: slow, not impossible
                 rate *= 0.75 + 0.25 * plot.water
                 rate *= 0.80 + 0.20 * plot.food
+                if plot.weeds >= WEED_SLOW:
+                    rate *= 1.0 - 0.55 * (plot.weeds - WEED_SLOW) / (1.0 - WEED_SLOW)
                 plot.progress = min(1.0, plot.progress + day_frac * rate)
             else:
                 plot.health = max(0.0, plot.health - day_frac * 1.6)
@@ -204,6 +276,7 @@ class Farm:
                     self.clear(plot)
                     continue
 
+            self._refresh_weeds(plot)
             stage = self._stage_for(crop, plot.progress)
             if stage != plot.stage:
                 if plot.stage >= 0 and stage == len(crop.stages) - 1:
@@ -247,7 +320,7 @@ class Farm:
             "plots": [
                 {"x": p.x, "y": p.y, "crop": p.crop, "progress": p.progress,
                  "water": p.water, "food": p.food, "health": p.health,
-                 "tilled": p.tilled}
+                 "tilled": p.tilled, "weeds": p.weeds, "blight": p.blight}
                 for p in self.plots
             ],
             "harvested": self.harvest_log,
@@ -256,6 +329,9 @@ class Farm:
     def from_dict(self, data: dict):
         for plot in self.plots:
             self._clear_model(plot)
+            if plot.weed_node is not None:
+                plot.weed_node.removeNode()
+                plot.weed_node = None
         self.plots.clear()
         for d in data.get("plots", []):
             plot = self.add_plot(d["x"], d["y"], d.get("tilled", True))
@@ -264,6 +340,9 @@ class Farm:
             plot.water = d.get("water", 0.0)
             plot.food = d.get("food", 0.0)
             plot.health = d.get("health", 1.0)
+            plot.weeds = d.get("weeds", 0.0)
+            plot.blight = d.get("blight", 0.0)
+            self._refresh_weeds(plot)
             if plot.crop:
                 self._refresh_model(plot)
         self.harvest_log = dict(data.get("harvested", {}))

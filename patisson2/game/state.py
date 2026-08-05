@@ -126,6 +126,7 @@ SHOP_ITEMS = [
     ("seed_wheat", "Семена пшеницы", 3, "Три колоса с грядки."),
     ("seed_pumpkin", "Семена тыквы", 16, "Осенняя культура. Дорогая."),
     ("fertilizer", "Удобрение", 6, "Питание для растения на грядке."),
+    ("ash", "Зола", 9, "Лечит гниль на грядке."),
     ("lantern_oil", "Масло для фонарей", 140, "Фонари горят ярче ночью."),
 ]
 
@@ -195,6 +196,8 @@ ACHIEVEMENTS = {
     "ichthyologist": "Поймать все виды рыб",
     "well_rested": "Выспаться в своей кровати",
     "toolmaster": "Улучшить все инструменты до предела",
+    "gardener": "Прополоть двадцать грядок",
+    "crow_chaser": "Прогнать ворону с грядки",
 }
 
 
@@ -455,12 +458,13 @@ class GameState:
 
 
 def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None) -> Path:
+              livestock=None, pests=None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     blob = {
         "state": state.to_dict(),
         "farm": farm.to_dict(),
         "livestock": livestock.to_dict() if livestock else {},
+        "pests": pests.to_dict() if pests else {},
         "clock": {"total_time": cycle.total_time},
         "player": {"x": player.pos.x, "y": player.pos.y,
                    "heading": player.heading, "pitch": player.pitch},
@@ -470,7 +474,7 @@ def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
 
 
 def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None) -> bool:
+              livestock=None, pests=None) -> bool:
     if not path.exists():
         return False
     try:
@@ -481,6 +485,8 @@ def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
     farm.from_dict(blob.get("farm", {}))
     if livestock is not None:
         livestock.from_dict(blob.get("livestock", {}))
+    if pests is not None:
+        pests.from_dict(blob.get("pests", {}))
     cycle.total_time = blob.get("clock", {}).get("total_time", cycle.total_time)
     p = blob.get("player", {})
     if p:

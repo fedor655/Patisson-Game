@@ -1050,6 +1050,61 @@ def make_cat():
             Part(eyes, "eyes", roughness=0.2)]
 
 
+def make_crow():
+    """A crow: black, hunched, and after your ripe crops."""
+    body = Mesh()
+    beak = Mesh()
+    eye = Mesh()
+    black = srgb(38, 36, 42)
+    sheen = srgb(58, 56, 72)
+    body.extend(sphere(0.115, black, 12, 9).scale(0.85, 1.45, 0.90)
+                .translate(0, 0, 0.145))
+    body.extend(sphere(0.075, black, 10, 8).translate(0, 0.135, 0.235))
+    # Tail and folded wings.
+    tail = box(0.075, 0.20, 0.028, sheen, origin="center")
+    tail.rotate_x(-14).translate(0, -0.20, 0.145)
+    body.extend(tail)
+    for sx in (-1, 1):
+        wing = box(0.045, 0.20, 0.075, sheen, origin="center")
+        wing.rotate_y(sx * 9).translate(sx * 0.088, -0.01, 0.150)
+        body.extend(wing)
+    for sx in (-1, 1):
+        body.extend(tube([(sx * 0.042, 0.0, 0.055), (sx * 0.042, 0.01, 0.0)],
+                         [0.012, 0.010], srgb(96, 84, 62), 5))
+    beak.extend(cone(0.026, 0.085, srgb(188, 168, 72), 7)
+                .rotate_x(90).translate(0, 0.185, 0.238))
+    for sx in (-1, 1):
+        eye.extend(sphere(0.013, srgb(226, 208, 96), 6, 5)
+                   .translate(sx * 0.042, 0.168, 0.262))
+    return [Part(body, "crow", roughness=0.62),
+            Part(beak, "beak", roughness=0.45),
+            Part(eye, "eye", roughness=0.22)]
+
+
+def make_weeds(seed: int = 55):
+    """A tuft of weeds that sprouts on a neglected plot."""
+    m = Mesh()
+    r = _rng(seed)
+    weedy = srgb(96, 122, 58)
+    weedy2 = srgb(126, 140, 72)
+    for _ in range(9):
+        a = r.uniform(0, 360)
+        d = r.uniform(0.0, 0.30)
+        x, y = math.cos(math.radians(a)) * d, math.sin(math.radians(a)) * d
+        h = r.uniform(0.14, 0.30)
+        lean = r.uniform(0.03, 0.10)
+        m.extend(tube([(x, y, 0), (x + lean * 0.4, y, h * 0.6),
+                       (x + lean, y + lean * 0.3, h)],
+                      [0.010, 0.008, 0.005], weedy if r.random() < 0.6 else weedy2, 5))
+        for _ in range(2):
+            lf = leaf(r.uniform(0.06, 0.11), r.uniform(0.03, 0.055),
+                      weedy2, curl=0.25, segments=4)
+            lf.rotate_y(-r.uniform(25, 60)).rotate_z(r.uniform(0, 360))
+            lf.translate(x + lean * 0.5, y, h * r.uniform(0.35, 0.8))
+            m.extend(lf)
+    return [Part(m, "weeds", roughness=0.88, double_sided=True)]
+
+
 def make_butterfly():
     wings = Mesh()
     body = Mesh()
@@ -1219,6 +1274,8 @@ MODELS = {
     "cow": make_cow,
     "cat": make_cat,
     "butterfly": make_butterfly,
+    "crow": make_crow,
+    "weeds": make_weeds,
     "fish": make_fish,
 }
 

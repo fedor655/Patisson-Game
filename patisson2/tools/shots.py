@@ -107,6 +107,34 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
             (ripe.x - 1.5, ripe.y - 1.5, gz(ripe.x - 1.5, ripe.y - 1.5)))
     shot("03-patisson-ripe.png", hour=12.0)
 
+    # Neglect: weeds on the beds, blight on one, and a crow come to help itself.
+    for i, plot in enumerate(app.farm.plots[:10]):
+        plot.weeds = 0.45 + (i % 4) * 0.16
+        app.farm._refresh_weeds(plot)
+    app.farm.plots[3].blight = 0.7
+    victim = app.farm.plots[6]
+    app.farm.plant(victim, "patisson")
+    victim.progress = 1.0
+    app.farm._refresh_model(victim)
+    app.pests.scarecrow.condition = 0.1
+    app.pests.timer = 0.01
+    app.pests.update(0.02, Vec3(90, 90, 0), False)
+    for _ in range(int(6.5 * 60)):
+        app.pests.update(1 / 60.0, Vec3(90, 90, 0), False)
+    st.tool_index = 0
+    # Stand back past CROW_SCARE_RANGE, or the shot itself flushes the bird.
+    eye = (victim.x - 4.6, victim.y - 5.4)
+    look_at(app.player, (victim.x, victim.y, victim.z + 0.5), (eye[0], eye[1], gz(*eye)))
+    shot("03b-pests.png", hour=11.0)
+    app.pests.scare_all()
+    for _ in range(240):
+        app.pests.update(1 / 60.0, Vec3(90, 90, 0), False)
+    for plot in app.farm.plots:
+        plot.weeds = 0.0
+        plot.blight = 0.0
+        app.farm._refresh_weeds(plot)
+    app.pests.scarecrow.condition = 1.0
+
     # 4. The pond, from the reeds.
     from ..world.terrain import POND_CENTRE, POND_RADIUS
     px, py = POND_CENTRE
