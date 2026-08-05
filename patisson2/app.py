@@ -26,6 +26,7 @@ from .game.npc import Villagers
 from .game.pests import Pests
 from .game.player import Player
 from .game.state import GameState, load_game, save_game, shop_entries
+from .game.tutorial import Tutorial
 from .ui.hud import HUD
 from .ui.menu import MainMenu
 from .ui.worldmap import WorldMap
@@ -109,6 +110,8 @@ class PatissonApp(ShowBase):
         self.fishing = Fishing(random.Random(self.cfg.world.seed ^ 0xF15))
         self.photo_mode = False
         self.worldmap = WorldMap(self, self.hud, self.world, self.cfg.world)
+        self.tutorial = Tutorial()
+        self._walked = 0.0
         self.mode = "menu"             # menu | playing
         self.menu = MainMenu(self, self.hud)
         self._setup_input()
@@ -218,14 +221,18 @@ class PatissonApp(ShowBase):
     def menu_new_game(self):
         self.sound("click", 0.6)
         self.reset_world()
+        self.tutorial = Tutorial()
+        self._walked = 0.0
         self._enter_world()
-        self.state.notify(
-            "Ферма ждёт. Возьмите мотыгу (1) и вскопайте грядку.", 8.0)
+        # The tutorial panel says all this, and says it until it is done.
+        if not self.tutorial.active:
+            self.state.notify("Ферма ждёт.", 5.0)
 
     def menu_continue(self):
         self.sound("click", 0.6)
         if load_game(self.state, self.farm, self.cycle, self.player,
-                     livestock=self.livestock, pests=self.pests):
+                     livestock=self.livestock, pests=self.pests,
+                     tutorial=self.tutorial):
             self._enter_world()
             self.state.notify("Игра загружена")
         else:
@@ -282,6 +289,7 @@ class PatissonApp(ShowBase):
         if self.mode == "menu" or self.hud.panel_mode:
             return
         self.sound("click", 0.5)
+        self.teach("map")
         opened = self.worldmap.toggle()
         # The HUD would otherwise print prompts straight across the map.
         if opened:
@@ -311,6 +319,23 @@ class PatissonApp(ShowBase):
         self.sound("click", 0.7)
         minutes = int(seconds / self.cfg.game.day_length * 24 * 60)
         self.state.notify(f"{label}: дорога заняла {max(1, minutes)} мин")
+
+    def skip_tutorial(self):
+        self.sound("click", 0.5)
+        self.tutorial.skip()
+        self.state.notify("Обучение отключено")
+        self.hud.close_panel()
+        self.paused = False
+        self._grab_mouse(True)
+
+    def teach(self, event: str) -> None:
+        """Tell the tutorial something real happened."""
+        step = self.tutorial.record(event)
+        if step is not None:
+            self.sound("click", 0.45)
+            if self.tutorial.finished:
+                self.state.notify("Обучение пройдено. Ферма ваша.", 6.0)
+                self.state.unlock("first_seed")
 
     def sound(self, name: str, volume: float = 1.0, pitch: float = 0.0):
         if self.audio:
@@ -434,12 +459,14 @@ class PatissonApp(ShowBase):
 
     def on_save(self):
         path = save_game(self.state, self.farm, self.cycle, self.player,
-                         livestock=self.livestock)
+                         livestock=self.livestock, pests=self.pests,
+                         tutorial=self.tutorial)
         self.state.notify(f"Сохранено: {path.name}")
 
     def on_load(self):
         if load_game(self.state, self.farm, self.cycle, self.player,
-                     livestock=self.livestock, pests=self.pests):
+                     livestock=self.livestock, pests=self.pests,
+                     tutorial=self.tutorial):
             self.state.notify("Игра загружена")
         else:
             self.state.notify("Сохранение не найдено")
@@ -449,7 +476,10 @@ class PatissonApp(ShowBase):
             self.on_eat()
             return
         if self._near_stall():
-            self.sound("coin" if self.state.sell_all() else "error", 0.9)
+            sold = self.state.sell_all()
+            self.sound("coin" if sold else "error", 0.9)
+            if sold:
+                self.teach("sell")
         else:
             self.sound("error", 0.6)
             self.state.notify("Продавать можно у прилавка")
@@ -672,6 +702,7 @@ class PatissonApp(ShowBase):
                     if st.weeded >= 20:
                         st.unlock("gardener")
                     st.notify("Грядка прополота")
+                    self.teach("weed")
                     return
                 from .world.layout import PLOT_SPACING
                 dug = 0
@@ -681,6 +712,7 @@ class PatissonApp(ShowBase):
                         dug += 1
                 if dug:
                     self.sound("dig", 0.9)
+                    self.teach("till")
                     st.notify("Грядка вскопана" if dug == 1
                               else f"Вскопано грядок: {dug}")
                 else:
@@ -693,6 +725,7 @@ class PatissonApp(ShowBase):
             if self._near_well() or self._near_water():
                 st.water = st.upgrades.can_capacity
                 self.sound("well" if self._near_well() else "splash", 0.7)
+                self.teach("fill")
                 st.notify("Лейка полна")
             elif plot is not None and st.water >= 1.0:
                 targets = [plot]
@@ -710,6 +743,7 @@ class PatissonApp(ShowBase):
                         poured += 1
                 if poured:
                     self.sound("water", 0.8)
+                    self.teach("water")
                     if poured > 1:
                         st.notify(f"Полито грядок: {poured}")
                 elif not poured:
@@ -725,6 +759,7 @@ class PatissonApp(ShowBase):
                 if st.take(f"seed_{key}"):
                     self.farm.plant(plot, key)
                     self.sound("plant", 0.85)
+                    self.teach("plant")
                     st.unlock("first_seed")
                     st.notify(f"Посажено: {CROPS[key].name}")
                     growing = sum(1 for p in self.farm.plots if p.crop)
@@ -748,6 +783,7 @@ class PatissonApp(ShowBase):
                 if result:
                     key, count = result
                     self.sound("harvest", 0.9)
+                    self.teach("harvest")
                     st.give(key, count)
                     st.record("harvest", key, count)
                     st.unlock("first_harvest")
@@ -885,8 +921,12 @@ class PatissonApp(ShowBase):
         if in_menu:
             cam_pos = self.menu.update(dt, self.camera, self.world)
         else:
+            before = Vec3(self.player.pos)
             self.player.update(dt, self.keys, blocked=blocked)
             self.player.apply_to_camera(self.camera)
+            self._walked += (self.player.pos - before).length()
+            if self._walked > 8.0:
+                self.teach("move")
             cam_pos = self.player.eye
         st.stamina_frac = self.player.stamina / self.cfg.game.stamina_max
 

@@ -458,13 +458,14 @@ class GameState:
 
 
 def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None, pests=None) -> Path:
+              livestock=None, pests=None, tutorial=None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     blob = {
         "state": state.to_dict(),
         "farm": farm.to_dict(),
         "livestock": livestock.to_dict() if livestock else {},
         "pests": pests.to_dict() if pests else {},
+        "tutorial": tutorial.to_dict() if tutorial else {},
         "clock": {"total_time": cycle.total_time},
         "player": {"x": player.pos.x, "y": player.pos.y,
                    "heading": player.heading, "pitch": player.pitch},
@@ -474,7 +475,7 @@ def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
 
 
 def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
-              livestock=None, pests=None) -> bool:
+              livestock=None, pests=None, tutorial=None) -> bool:
     if not path.exists():
         return False
     try:
@@ -487,6 +488,8 @@ def load_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,
         livestock.from_dict(blob.get("livestock", {}))
     if pests is not None:
         pests.from_dict(blob.get("pests", {}))
+    if tutorial is not None:
+        tutorial.from_dict(blob.get("tutorial", {}))
     cycle.total_time = blob.get("clock", {}).get("total_time", cycle.total_time)
     p = blob.get("player", {})
     if p:

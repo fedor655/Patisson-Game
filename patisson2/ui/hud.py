@@ -116,6 +116,25 @@ class HUD:
         self._fish_shown = False
         self._fish_band = -1.0
 
+        # --- tutorial checklist ------------------------------------------
+        self.tutor_panel = DirectFrame(
+            parent=self.root, frameColor=(0.05, 0.06, 0.07, 0.72),
+            frameSize=(-0.02, 0.86, -0.20, 0.055), pos=(-1.74, 0, 0.60))
+        self.tutor_panel.setBin("fixed", 8)
+        self.tutor_head = OnscreenText(
+            text="", pos=(0.0, 0.0), scale=0.038, fg=(0.72, 0.78, 0.72, 1),
+            font=self.font, align=TextNode.ALeft, parent=self.tutor_panel,
+            mayChange=True)
+        self.tutor_title = OnscreenText(
+            text="", pos=(0.0, -0.062), scale=0.046, fg=GOLD, font=self.font,
+            align=TextNode.ALeft, parent=self.tutor_panel, mayChange=True)
+        self.tutor_hint = OnscreenText(
+            text="", pos=(0.0, -0.122), scale=0.036, fg=DIM, font=self.font,
+            align=TextNode.ALeft, parent=self.tutor_panel, mayChange=True,
+            wordwrap=24)
+        self.tutor_panel.hide()
+        self._tutor_shown = False
+
         self.crosshair = OnscreenText(text="+", pos=(0, -0.012), scale=0.055,
                                       fg=(1, 1, 1, 0.55), font=self.font,
                                       align=TextNode.ACenter, parent=self.root)
@@ -200,6 +219,7 @@ class HUD:
         app = self.base
         entries = [
             ("Продолжить", app.on_escape),
+            ("Пропустить обучение", app.skip_tutorial),
             ("Сохранить", app.on_save),
             ("В главное меню", app.open_main_menu),
             ("Выход", app.userExit),
@@ -207,11 +227,11 @@ class HUD:
         for i, (label, cmd) in enumerate(entries):
             b = DirectButton(
                 parent=self.panel, text=label, text_font=self.font,
-                text_fg=INK, text_scale=0.045, text_pos=(0, -0.015),
+                text_fg=INK, text_scale=0.036, text_pos=(0, -0.012),
                 frameColor=((0.12, 0.14, 0.12, 0.9), (0.26, 0.32, 0.18, 0.95),
                             (0.34, 0.42, 0.22, 1.0), (0.1, 0.1, 0.1, 0.6)),
-                frameSize=(-0.24, 0.24, -0.042, 0.052), relief=1,
-                pos=(-0.75 + i * 0.50, 0, -0.52), command=cmd)
+                frameSize=(-0.172, 0.172, -0.042, 0.052), relief=1,
+                pos=(-0.86 + i * 0.36, 0, -0.615), command=cmd)
             b.setTransparency(TransparencyAttrib.MAlpha)
             self.panel_buttons.append(b)
 
@@ -297,7 +317,7 @@ class HUD:
                      "  WASD — движение,  Shift — бег,  Space — прыжок",
                      "  ЛКМ / E — действие инструментом",
                      "  1..5 — инструменты,  Q/колесо — выбор семян",
-                     "  T — магазин,  K — котёл,  J — журнал",
+                     "  T — магазин,  K — котёл,  J — журнал,  Tab — карта",
                      "  F5 — сохранить,  F9 — загрузить",
                      "  P — фотореж. (трассировка лучей),  F1 — интерфейс",
                      "  M — звук вкл/выкл,  - / = — громкость",
@@ -326,6 +346,29 @@ class HUD:
         return shop_entries(self.state.upgrades)[self.shop_index][0]
 
     # ---------------------------------------------------------------- update
+
+    def _update_tutorial(self):
+        """Show the current objective, or the sign-off once it is all done."""
+        tut = getattr(self.base, "tutorial", None)
+        if tut is None or not tut.active:
+            if self._tutor_shown:
+                self.tutor_panel.hide()
+                self._tutor_shown = False
+            return
+        if not self._tutor_shown:
+            self.tutor_panel.show()
+            self._tutor_shown = True
+        done, total = tut.progress()
+        step = tut.current
+        if step is None:
+            from ..game.tutorial import DONE_HINT, DONE_TITLE
+            self._set(self.tutor_head, f"ОБУЧЕНИЕ  {total}/{total}")
+            self._set(self.tutor_title, DONE_TITLE)
+            self._set(self.tutor_hint, DONE_HINT)
+        else:
+            self._set(self.tutor_head, f"ОБУЧЕНИЕ  {done}/{total}")
+            self._set(self.tutor_title, step.title)
+            self._set(self.tutor_hint, step.hint)
 
     def _update_fishing(self):
         """Draw the reel bar: a sweeping marker and the band to stop it in."""
@@ -410,6 +453,7 @@ class HUD:
         # Assigning frameSize rebuilds the frame's geometry, so quantise it —
         # a bar that redraws every frame costs more than the rest of the HUD.
         self._update_fishing()
+        self._update_tutorial()
 
         frac = max(0.0, min(1.0, state.stamina_frac))
         step = round(frac * 40)
