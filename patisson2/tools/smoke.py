@@ -53,36 +53,163 @@ def run() -> int:
     check("новая игра", app.menu_new_game)
     check("кадр", lambda: [app.taskMgr.step() for _ in range(5)])
 
-    # --- tools -----------------------------------------------------------
-    def use(tool_index, where=(6.0, 8.0)):
-        st.tool_index = tool_index
-        app.player.pos.x, app.player.pos.y = where
-        app.player.pitch = -60.0
-        app.on_interact()
+    # --- everything the player does with a key ---------------------------
+    # Through on_interact and friends, standing and aiming where a player
+    # would, and asserting the world moved. Calling Farm.weed() directly is
+    # what let the weeding branch sit unreachable for the life of the branch:
+    # "[E] Прополоть" was on screen and the key did nothing.
 
-    check("мотыга", lambda: use(0, (18.0, 18.0)))
-    check("лейка у колодца", lambda: use(1, (8.4, 7.6)))
+    def stand(x, y, heading=0.0, pitch=-70.0):
+        app.player.pos.x, app.player.pos.y = x, y
+        app.player.pos.z = app.world.height_at(x, y)
+        app.player.heading, app.player.pitch = heading, pitch
+        app.player.frozen = True
+
+    def face(tx, ty, back=0.9, pitch=-70.0):
+        """Stand `back` metres south of a spot and look down at it."""
+        stand(tx, ty - back, 0.0, pitch)
+
+    def acts(label, setup, press, moved):
+        def run():
+            setup()
+            prompt = app.context()[0]
+            press()
+            assert moved(), f"{label}: ничего не изменилось (подсказка {prompt!r})"
+        check(label, run)
+
     plot = app.farm.plots[0]
-    check("посадка", lambda: (st.give("seed_patisson", 3),
-                              app.farm.plant(plot, "patisson")))
-    check("полив грядки", lambda: app.farm.water_plot(plot))
-    check("удобрение", lambda: (st.give("fertilizer", 1), app.on_secondary()))
-    def weed_round():
-        """Through on_interact, not Farm.weed: the counter behind the
-        twenty-beds achievement only ticks on the real key press."""
+
+    acts("вспашка", lambda: (setattr(st, "tool_index", 0), stand(18.0, 18.0)),
+         app.on_interact,
+         lambda: app.farm.nearest(app.player.aim_point(1.0), 2.0) is not None)
+
+    def plant_setup():
+        plot.crop, plot.tilled, plot.weeds = None, True, 0.0
+        st.give("seed_patisson", 5)
+        st.tool_index, st.seed_index = 2, 0
+        face(plot.x, plot.y)
+    acts("посадка", plant_setup, app.on_interact, lambda: plot.crop == "patisson")
+
+    def well_setup():
+        from ..world.layout import LAYOUT
+        st.water, st.tool_index = 0.0, 1
+        wx, wy, _h = LAYOUT["well"]
+        stand(wx + 1.2, wy + 1.2, 0.0, -30.0)
+    acts("вода из колодца", well_setup, app.on_interact, lambda: st.water > 0.0)
+
+    def pond_setup():
+        # The waterline sits well inside the nominal pond radius; stand on the
+        # shore where a player fishing would.
+        st.water, st.tool_index = 0.0, 1
+        px, py = app.world.pond_centre
+        for dist in range(int(app.world.pond_radius), 3, -1):
+            if app.world.height_at(px, py - dist) >= app.cfg.world.water_level:
+                stand(px, py - dist, 0.0, -20.0)
+                if app._near_water():
+                    return
+        raise AssertionError("не нашлось берега, с которого видно воду")
+    acts("вода из пруда", pond_setup, app.on_interact, lambda: st.water > 0.0)
+
+    def water_setup():
+        plot.water, st.water, st.tool_index = 0.0, 8.0, 1
+        face(plot.x, plot.y)
+    acts("полив грядки", water_setup, app.on_interact, lambda: plot.water > 0.0)
+
+    def fert_setup():
+        plot.food = 0.0
+        st.give("fertilizer", 2)
+        st.tool_index = 0
+        face(plot.x, plot.y)
+    acts("удобрение (ПКМ)", fert_setup, app.on_secondary, lambda: plot.food > 0.0)
+
+    def cure_setup():
+        plot.blight = 0.6
+        st.give("ash", 2)
+        st.tool_index = 0
+        face(plot.x, plot.y)
+    acts("лечение гнили", cure_setup, app.on_secondary, lambda: plot.blight < 0.05)
+
+    def weed_setup():
         plot.weeds = 0.8
-        st.tool_index = 0                       # hoe
-        app.player.pos.x, app.player.pos.y = plot.x, plot.y - 0.9
-        app.player.pos.z = app.world.height_at(plot.x, plot.y - 0.9)
-        app.player.heading, app.player.pitch = 0.0, -70.0
-        app.on_interact()
-        assert plot.weeds < 0.05, "грядка осталась заросшей"
-        assert st.weeded >= 1, "прополка не засчиталась в достижение"
-    check("прополка", weed_round)
-    check("лечение гнили", lambda: (setattr(plot, "blight", 0.5),
-                                    st.give("ash", 1), app.farm.cure(plot)))
-    check("сбор урожая", lambda: (setattr(plot, "progress", 1.0),
-                                  app.farm.harvest(plot, st.upgrades.harvest_bonus)))
+        st.tool_index = 0
+        face(plot.x, plot.y)
+
+    def weeded_and_counted():
+        return plot.weeds < 0.05 and st.weeded >= 1
+    acts("прополка", weed_setup, app.on_interact, weeded_and_counted)
+
+    def harvest_setup():
+        plot.crop, plot.progress = "patisson", 1.0
+        app.farm._refresh_model(plot)
+        st.tool_index = 4
+        face(plot.x, plot.y)
+    acts("сбор урожая", harvest_setup, app.on_interact,
+         lambda: plot.crop is None and st.count("patisson") > 0)
+
+    def stall_setup():
+        from ..world.layout import LAYOUT
+        st.give("patisson", 4)
+        st.coins = 0
+        sx, sy, _h = LAYOUT["market_stall"]
+        stand(sx + 1.0, sy + 1.0, 0.0, -20.0)
+    acts("продажа у прилавка", stall_setup, app.on_sell, lambda: st.coins > 0)
+
+    def scarecrow_setup():
+        app.pests.scarecrow.condition = 0.3
+        stand(app.pests.scarecrow.pos.x, app.pests.scarecrow.pos.y - 1.5)
+    acts("починка пугала", scarecrow_setup, app.on_interact,
+         lambda: app.pests.scarecrow.condition > 0.9)
+
+    held = {}
+
+    def feed_setup():
+        from ..game.livestock import FEED_ITEM
+        animal, state = next(iter(app.livestock.animals()))
+        held["state"] = state
+        state.fed, state.ready, state.progress = 0.0, False, 0.0
+        st.give(FEED_ITEM, 8)
+        p = animal.node.getPos()
+        stand(p.x, p.y - 1.0, 0.0, -40.0)
+    acts("кормление", feed_setup, app.on_interact,
+         lambda: held["state"].fed > 0.0)
+
+    def collect_setup():
+        animal, state = next(iter(app.livestock.animals()))
+        held["state"] = state
+        state.ready, state.progress = True, 1.0
+        p = animal.node.getPos()
+        stand(p.x, p.y - 1.0, 0.0, -40.0)
+    acts("сбор продукта", collect_setup, app.on_interact,
+         lambda: not held["state"].ready)
+
+    def cook_setup():
+        from ..game.cooking import POT_POSITION
+        st.give("egg", 6)
+        st.give("milk", 4)
+        px, py = POT_POSITION
+        stand(px, py - 1.2, 0.0, -30.0)
+        app.toggle_kitchen()                 # K opens the pot
+        app.kitchen.index = 1                # omelette
+    acts("готовка (Enter у котла)", cook_setup, app.on_confirm,
+         lambda: st.count("omelette") > 0)
+    app.toggle_kitchen()
+
+    def talk_setup():
+        app.hud.hide_dialogue()
+        p = app.villagers.npcs[0].node.getPos()
+        stand(p.x, p.y - 1.2, 0.0, -10.0)
+    acts("разговор", talk_setup, app.on_interact,
+         lambda: app.hud.dialogue is not None)
+    app.hud.hide_dialogue()
+
+    def sleep_setup():
+        bed = app.props.bed_pos
+        stand(bed[0], bed[1], 0.0, 0.0)
+        app.cycle.total_time = (app.cycle.day * app.cfg.game.day_length
+                                + 20.0 / 24.0 * app.cfg.game.day_length)
+        held["day"] = app.cycle.day
+    acts("сон в кровати", sleep_setup, app.on_interact,
+         lambda: app.cycle.day > held["day"])
 
     # --- fishing ---------------------------------------------------------
     def fish_round():
@@ -157,6 +284,7 @@ def run() -> int:
     def dialogue_round():
         from ..game.dialogue import GREETINGS, TOPICS
         npc = app.villagers.npcs[0]
+        npc.met, _ = False, npc.recent.clear()   # someone may have met them
         assert npc.talk(app.talk_context()) == GREETINGS[npc.key], "нет знакомства"
         # Every topic must have a line for every villager, or a context that
         # only fits one of them would leave the others with nothing to say.
