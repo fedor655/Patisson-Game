@@ -108,10 +108,18 @@ class HUD:
         self.notif = [text((-1.72, -0.55 + i * 0.062), 0.040, fg=(1, 1, 1, 1))
                       for i in range(5)]
 
+        # Slot backgrounds span -0.94..-0.81, centre -0.875. The labels used
+        # to sit on a baseline of -0.90, which puts the glyph midline a
+        # third of the text height below the slot centre — the player saw
+        # the captions riding low in their boxes. The baseline is derived
+        # from the centre instead, and _set_tool() re-derives it whenever a
+        # long label has to shrink to stay inside its slot.
+        self.SLOT_CENTRE = -0.875
         self.tool_labels = []
         for i in range(len(TOOLS)):
             self.tool_labels.append(
-                text((-0.62 + i * 0.31, -0.90), 0.040, TextNode.ACenter, DIM))
+                text((-0.62 + i * 0.31, self.SLOT_CENTRE - 0.36 * 0.040),
+                     0.040, TextNode.ACenter, DIM))
         self.tool_slot_bg = []
         cm = CardMaker("slot")
         cm.setFrame(-0.13, 0.13, -0.055, 0.075)
@@ -560,6 +568,24 @@ class HUD:
             self._last[id(node)] = value
             node.setText(value)
 
+    def _set_tool(self, i: int, value: str):
+        """Tool caption: shrink to fit the slot, stay on its centre line.
+
+        «3 Патиссон x3» at full size is wider than the 0.26 slot and used
+        to hang out both sides. Measure the glyphs, cap the width, and
+        re-derive the baseline so the midline stays put as the scale
+        changes.
+        """
+        node = self.tool_labels[i]
+        if self._last.get(id(node)) == value:
+            return
+        self._last[id(node)] = value
+        node.setText(value)
+        width = node.textNode.getWidth()
+        scale = min(0.040, 0.24 / max(width, 1e-3))
+        node.setScale(scale)
+        node.setPos(-0.62 + i * 0.31, self.SLOT_CENTRE - 0.36 * scale)
+
     def update(self, cycle, state, weather: str):
         self._set(self.clock_text, f"{cycle.clock_string()}   День {cycle.day + 1}")
         self._set(self.season_text, cycle.season_name)
@@ -583,7 +609,7 @@ class HUD:
                 tier = getattr(state.upgrades, key, 1)
                 if tier > 1:
                     label += " " + ("II" if tier == 2 else "III")
-            self._set(self.tool_labels[i], f"{i+1} {label}")
+            self._set_tool(i, f"{i+1} {label}")
 
         # Assigning to a DirectGui item calls configure(), which rebuilds the
         # widget. Doing that for every slot every frame cost more than the whole

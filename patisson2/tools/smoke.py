@@ -1325,6 +1325,37 @@ def run() -> int:
             app.toggle_options()
     check("подпись настроек не налезает", options_note_below_menu)
 
+    def tool_captions_sit_in_slots():
+        """Every tool caption fits its slot and sits on its centre line.
+
+        The captions rode a baseline of -0.90 against a slot centre of
+        -0.875 — a third of the text height too low, which the player
+        noticed — and «3 Патиссон x3» at full size was wider than its
+        slot. Measured at tier III, where every caption is longest.
+        """
+        keep = (st.upgrades.hoe, st.upgrades.can,
+                st.upgrades.rod, st.upgrades.basket)
+        try:
+            st.upgrades.hoe = st.upgrades.can = 3
+            st.upgrades.rod = st.upgrades.basket = 3
+            app.hud.update(app.cycle, st, "Ясно")
+            app.taskMgr.step()
+            for i, (lbl, bg) in enumerate(zip(app.hud.tool_labels,
+                                              app.hud.tool_slot_bg)):
+                lo, hi = lbl.getTightBounds()
+                width = hi.x - lo.x
+                mid = (lo.z + hi.z) / 2
+                assert width <= 0.25, \
+                    f"«{lbl.getText()}» шире плашки: {width:.3f} из 0.26"
+                assert abs(mid - (-0.875)) <= 0.011, \
+                    f"«{lbl.getText()}» не по центру плашки " \
+                    f"(середина {mid:.3f}, центр -0.875)"
+        finally:
+            (st.upgrades.hoe, st.upgrades.can,
+             st.upgrades.rod, st.upgrades.basket) = keep
+            app.hud.update(app.cycle, st, "Ясно")
+    check("подписи инструментов по центру", tool_captions_sit_in_slots)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
