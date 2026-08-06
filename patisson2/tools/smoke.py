@@ -1356,6 +1356,33 @@ def run() -> int:
             app.hud.update(app.cycle, st, "Ясно")
     check("подписи инструментов по центру", tool_captions_sit_in_slots)
 
+    def quest_rewards_are_worth_it():
+        """A milestone bonus must not be smaller than the thing it honours.
+
+        Rewards were written before the economy was rebalanced twice:
+        «Первый патиссон» paid 40 while the patisson sells for 52, and
+        «Кондитер» paid 260 for a pie that sells for 320. The reward is
+        paid on top of goods the player keeps, so the floor is the market
+        price of one unit of what the quest celebrates — and the later
+        quest in a chain pays more than the earlier one.
+        """
+        from ..game.cooking import DISH_PRICE
+        from ..game.farming import CROPS
+        from ..game.state import default_quests
+
+        q = {quest.key: quest for quest in default_quests()}
+        pat = CROPS["patisson"].sell_price
+        assert q["first_patisson"].reward >= pat, \
+            f"«Первый патиссон» платит {q['first_patisson'].reward}, " \
+            f"а патиссон стоит {pat}"
+        assert q["baker"].reward >= DISH_PRICE["pie"], \
+            f"«Кондитер» платит {q['baker'].reward}, " \
+            f"а пирог стоит {DISH_PRICE['pie']}"
+        assert q["harvest_master"].reward > q["first_patisson"].reward
+        assert q["baker"].reward > q["cook"].reward
+        assert all(quest.reward > 0 for quest in q.values())
+    check("награды заданий соразмерны", quest_rewards_are_worth_it)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

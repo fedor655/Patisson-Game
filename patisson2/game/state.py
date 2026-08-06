@@ -259,25 +259,32 @@ class Quest:
 
 
 def default_quests() -> list[Quest]:
+    """Rewards were set before the economy was rebalanced twice, and it
+    showed: «Первый патиссон» paid 40 while the patisson itself sells for
+    52, and «Кондитер» paid 260 for baking a pie that sells for 320 — the
+    milestone bonus was smaller than the thing it celebrated. A reward is
+    paid on top of goods the player keeps, so the floor is simple: at
+    least the market price of one unit of what the quest asks for, rising
+    down the chain."""
     return [
         Quest("first_patisson", "Первый патиссон",
-              "Вырастите и соберите 1 патиссон.", 1, 40, "harvest", "patisson"),
+              "Вырастите и соберите 1 патиссон.", 1, 70, "harvest", "patisson"),
         Quest("fisher", "Рыбак",
-              "Поймайте 5 рыб в пруду.", 5, 55, "fish"),
+              "Поймайте 5 рыб в пруду.", 5, 80, "fish"),
         Quest("garden", "Огородник",
-              "Соберите 12 любых культур.", 12, 90, "harvest", "*"),
+              "Соберите 12 любых культур.", 12, 150, "harvest", "*"),
         Quest("trader", "Торговец",
-              "Накопите 400 монет.", 400, 120, "coins"),
+              "Накопите 400 монет.", 400, 150, "coins"),
         Quest("harvest_master", "Хозяин фермы",
-              "Соберите 6 патиссонов.", 6, 200, "harvest", "patisson"),
+              "Соберите 6 патиссонов.", 6, 260, "harvest", "patisson"),
         Quest("poultry", "Птичница",
-              "Соберите 5 яиц.", 5, 70, "collect", "egg"),
+              "Соберите 5 яиц.", 5, 90, "collect", "egg"),
         Quest("dairy", "Молочница",
-              "Соберите 3 ведра молока.", 3, 90, "collect", "milk"),
+              "Соберите 3 ведра молока.", 3, 110, "collect", "milk"),
         Quest("cook", "Повар",
-              "Приготовьте 3 блюда.", 3, 130, "cook", "*"),
+              "Приготовьте 3 блюда.", 3, 180, "cook", "*"),
         Quest("baker", "Кондитер",
-              "Испеките тыквенный пирог.", 1, 260, "cook", "pie"),
+              "Испеките тыквенный пирог.", 1, 400, "cook", "pie"),
     ]
 
 
