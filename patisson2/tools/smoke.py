@@ -1210,6 +1210,31 @@ def run() -> int:
             f"в огибающей ветра метроном волны (пик {peak:.2f})"
     check("ветер не прибой", wind_is_not_surf)
 
+    def birds_have_a_throat():
+        """A bird call must be a voice, not a signal generator.
+
+        Every bird here is built from _warble, and _warble was a bare
+        sine sweep — nearly all of its energy in one spectral line, which
+        is exactly what "поют по-цифровому" sounds like. A throat spreads
+        energy: vibrato widens the fundamental, harmonics colour it, and
+        breath adds a noise floor. Measured as the fraction of energy
+        within ±150 Hz of the fundamental: 0.97 for the old sine, 0.87
+        with the voice.
+        """
+        import numpy as np
+
+        from ..audio.bank import _warble
+        from ..audio.synth import SR
+
+        w = _warble(3200.0, 3200.0, 0.4).astype(np.float64)
+        spec = np.abs(np.fft.rfft(w)) ** 2
+        freqs = np.fft.rfftfreq(len(w), 1.0 / SR)
+        fund = float(spec[(freqs > 3050) & (freqs < 3350)].sum())
+        frac = fund / float(spec.sum())
+        assert frac < 0.93, \
+            f"птица — чистый синус: {frac:.2f} энергии в одной линии"
+    check("у птиц есть голос", birds_have_a_throat)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

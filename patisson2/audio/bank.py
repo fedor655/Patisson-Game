@@ -200,10 +200,24 @@ def sfx_moo() -> np.ndarray:
 
 
 def _warble(f0: float, f1: float, dur: float, gain: float = 1.0) -> np.ndarray:
-    """One swooping whistle — the building block of every bird here."""
-    sweep = np.linspace(f0, f1, seconds(dur))
-    body = sine(sweep, dur) * 0.85 + sine(sweep * 2.0, dur) * 0.15
-    return body * perc_env(dur, 0.006, 5.0) * gain
+    """One swooping whistle — the building block of every bird here.
+
+    Used to be a bare sine sweep with a whisper of second harmonic — a
+    signal generator, not a throat, and the player said so: "птицы поют
+    немного по цифровому". A songbird's tone carries a fast shallow
+    vibrato, real harmonic colour, a breath of air, and an attack that
+    is not a click.
+    """
+    n = seconds(dur)
+    t = np.arange(n, dtype=np.float64) / SR
+    sweep = np.linspace(f0, f1, n)
+    vib = 1.0 + 0.022 * np.sin(2 * np.pi * 11.3 * t + f0 * 0.013)
+    f = sweep * vib
+    body = (sine(f, dur) * 0.76 + sine(f * 2.0, dur) * 0.34
+            + sine(f * 3.0, dur) * 0.10)
+    breath = bandpass(noise(dur, int(f0) % 997), f0 * 0.8, f0 * 2.6) * 0.14
+    out = (body + breath) * perc_env(dur, 0.014, 4.2) * gain
+    return lowpass_fast(out, 7800)
 
 
 def sfx_bird(seed: int = 0) -> np.ndarray:
@@ -322,19 +336,20 @@ def amb_birds(duration: float = 16.0) -> np.ndarray:
         at = rng.uniform(0.2, duration - 1.2)
         kind = rng.random()
         if kind < 0.5:
-            # Two-note whistle.
+            # Two-note whistle, from the same throat as the tree birds —
+            # these used to be raw sine sweeps with no harmonics at all.
             f = rng.uniform(2200, 3600)
-            a = sine(np.linspace(f, f * rng.uniform(1.1, 1.4), seconds(0.09)), 0.09)
-            b = sine(np.linspace(f * 1.2, f * 0.85, seconds(0.11)), 0.11)
-            t.add(at, a * perc_env(0.09, 0.006, 5.0), rng.uniform(0.05, 0.12))
-            t.add(at + 0.13, b * perc_env(0.11, 0.006, 5.0), rng.uniform(0.04, 0.10))
+            t.add(at, _warble(f, f * rng.uniform(1.1, 1.4), 0.09),
+                  rng.uniform(0.05, 0.12))
+            t.add(at + 0.13, _warble(f * 1.2, f * 0.85, 0.11),
+                  rng.uniform(0.04, 0.10))
         else:
             # Trill.
             f = rng.uniform(2600, 4200)
             for k in range(rng.randint(3, 6)):
-                seg = 0.05
-                v = sine(f * (1.0 + 0.06 * (k % 2)), seg) * perc_env(seg, 0.004, 7.0)
-                t.add(at + k * 0.062, v, rng.uniform(0.03, 0.08))
+                fk = f * (1.0 + 0.06 * (k % 2))
+                t.add(at + k * 0.062, _warble(fk, fk, 0.05),
+                      rng.uniform(0.03, 0.08))
     return normalize(loopable(t.result(), 1.8), 0.40)
 
 
@@ -574,4 +589,4 @@ MUSIC = {
 ALL = {**SFX, **AMBIENCE, **MUSIC}
 
 # Bumping this regenerates the cache on the next launch.
-BANK_VERSION = 3
+BANK_VERSION = 4
