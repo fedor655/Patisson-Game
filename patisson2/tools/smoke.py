@@ -1271,6 +1271,30 @@ def run() -> int:
             f"бабочка летит боком: расхождение носа и курса до {bad:.0f}°"
     check("бабочки летят вперёд", butterflies_fly_forward)
 
+    def beds_are_geometry():
+        """A tilled plot must be a raised bed of soil, not a smear.
+
+        Tilled ground used to be a dark disc painted into the terrain
+        mask — about 3.5 px/m, a blurry blob ("низкая полигональность у
+        грядок"). Every tilled plot now carries a bed model with furrow
+        ridges, and the crop stands on its soil rather than under it.
+        """
+        bed = app.farm.plots[0]
+        assert bed.bed_node is not None, "у вскопанной грядки нет модели"
+        lo, hi = bed.bed_node.getTightBounds()
+        assert hi.z - lo.z > 0.05, \
+            f"грядка плоская: высота {hi.z - lo.z:.3f} м"
+        assert hi.x - lo.x > 0.9 and hi.y - lo.y > 0.9, \
+            "грядка меньше метра в плане"
+        p = app.farm.plots[1]
+        p.crop = None
+        p.tilled = True
+        assert app.farm.plant(p, "patisson"), "не удалось посадить"
+        assert p.node is not None and p.node.getPos().z >= p.z + 0.04, \
+            "росток закопан под грядку"
+        app.farm.clear(p)
+    check("грядки из земли, не из краски", beds_are_geometry)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

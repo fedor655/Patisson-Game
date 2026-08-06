@@ -752,6 +752,30 @@ def make_lantern():
                  emissive=(1.0, 0.72, 0.34), double_sided=True)]
 
 
+def make_plot_bed():
+    """A tilled bed with real furrows.
+
+    Tilled ground used to be nothing but a dark disc painted into the
+    terrain mask — at the mask's resolution (about 3.5 px/m) that is a
+    blurry smudge, which the player read as "низкая полигональность у
+    грядок". Soil is now geometry: a low raised slab with four ridged
+    furrows, jittered so no two ridges sit perfectly straight.
+    """
+    r = _rng(17)
+    soil = Mesh()
+    soil.extend(box(1.18, 1.18, 0.05, srgb(78, 55, 37), origin="base"))
+    for i, rx in enumerate((-0.42, -0.14, 0.14, 0.42)):
+        tint = srgb(88 + r.randint(0, 14), 62 + r.randint(0, 8),
+                    40 + r.randint(0, 8))
+        ridge = (box(0.11, 1.06, 0.11, tint)
+                 .rotate_y(45)
+                 .rotate_z(r.uniform(-3.0, 3.0))
+                 .translate(rx + r.uniform(-0.015, 0.015),
+                            r.uniform(-0.02, 0.02), 0.05))
+        soil.extend(ridge)
+    return [Part(soil, "soil", roughness=0.97)]
+
+
 def make_lamppost():
     """A post with an arm to hang a lantern from.
 
@@ -1285,6 +1309,7 @@ MODELS = {
     "scarecrow": make_scarecrow,
     "cooking_pot": make_cooking_pot,
     "lamppost": make_lamppost,
+    "plot_bed": make_plot_bed,
     "crate": make_crate,
     "barrel": make_barrel,
     "bucket": make_bucket,

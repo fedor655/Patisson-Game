@@ -143,6 +143,7 @@ class Plot:
     weeds: float = 0.0           # 0..1, choke the crop if left alone
     blight: float = 0.0          # 0..1, halts growth until treated
     weed_node: NodePath | None = None
+    bed_node: NodePath | None = None
     _wither_warned: bool = False
     _blight_warned: bool = False
 
@@ -184,7 +185,13 @@ class Farm:
         plot = Plot(x, y, z, tilled=tilled)
         self.plots.append(plot)
         if tilled:
+            # The mask still darkens the ground and keeps grass out, but the
+            # bed itself is geometry now: the mask alone (3.5 px/m) drew a
+            # blurry smudge where the player expected tilled soil.
             self.world.mask.paint(x, y, 0.52, 0)
+            h = (hash((round(x, 2), round(y, 2))) * 7) % 4 * 90.0
+            plot.bed_node = place(self.root, "plot_bed",
+                                  (x, y, z - 0.035), h, 1.0)
         return plot
 
     def nearest(self, pos: Vec3, radius: float = 2.0) -> Plot | None:
@@ -237,7 +244,7 @@ class Farm:
         want = plot.weeds >= WEED_START
         if want and plot.weed_node is None:
             plot.weed_node = place(self.props.dynamic, "weeds",
-                                   (plot.x, plot.y, plot.z + 0.02),
+                                   (plot.x, plot.y, plot.z + 0.06),
                                    (plot.x * 37 + plot.y * 11) % 360, 1.0)
         elif not want and plot.weed_node is not None:
             plot.weed_node.removeNode()
@@ -375,7 +382,8 @@ class Farm:
         # Wilting plants shrink and droop a little.
         scale *= 0.65 + 0.35 * plot.health
         h = (hash((round(plot.x, 2), round(plot.y, 2))) % 360)
-        plot.node = place(self.root, model, (plot.x, plot.y, plot.z - 0.02), h, scale)
+        # On the bed's soil, not buried under it: the slab top sits ~5 cm up.
+        plot.node = place(self.root, model, (plot.x, plot.y, plot.z + 0.05), h, scale)
         if plot.health < 0.55:
             plot.node.setColorScale(0.72 + 0.28 * plot.health,
                                     0.55 + 0.45 * plot.health,
