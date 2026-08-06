@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from panda3d.core import Vec3
+from .view import Vec3
 
 EYE_HEIGHT = 1.68
 WALK_SPEED = 4.4

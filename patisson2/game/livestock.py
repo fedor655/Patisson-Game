@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from panda3d.core import Vec3
+from .view import Vec3, place
 
-from ..world.props import place
 
 # kind -> (product item, in-game days between products, feed cost in wheat,
 #          how long one feeding lasts in days, interact range)

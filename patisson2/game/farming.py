@@ -11,9 +11,8 @@ import random
 
 from dataclasses import dataclass
 
-from panda3d.core import NodePath, Vec3
+from .view import Node, Vec3, place
 
-from ..world.props import place
 from .pests import (BLIGHT_DAILY_CHANCE, BLIGHT_SOGGY,
                     WEED_SLOW, WEED_START, WEED_THIRST)
 
@@ -145,12 +144,12 @@ class Plot:
     food: float = 0.0            # 0..1
     health: float = 1.0
     tilled: bool = False
-    node: NodePath | None = None
+    node: Node | None = None
     stage: int = -1
     weeds: float = 0.0           # 0..1, choke the crop if left alone
     blight: float = 0.0          # 0..1, halts growth until treated
-    weed_node: NodePath | None = None
-    bed_node: NodePath | None = None
+    weed_node: Node | None = None
+    bed_node: Node | None = None
     _wither_warned: bool = False
     _blight_warned: bool = False
 

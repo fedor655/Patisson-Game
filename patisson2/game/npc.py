@@ -5,10 +5,9 @@ from __future__ import annotations
 import math
 import random
 
-from panda3d.core import Vec3
+from .view import Vec3, place
 
 from ..world.layout import LAYOUT
-from ..world.props import place
 
 # Each entry: (hour, (x, y), what they're doing)
 SCHEDULES = {

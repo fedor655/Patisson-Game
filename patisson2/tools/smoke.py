@@ -1464,6 +1464,33 @@ def run() -> int:
             f"окно просит не ту иконку: {asked}"
     check("иконка показывает игру", icon_shows_the_game)
 
+    def simulation_runs_without_the_engine():
+        """The farm has to grow on a machine with no renderer at all.
+
+        A dedicated server holds the world for everyone playing on it, and
+        a phone would draw that world some other way entirely — neither
+        has Panda3D. So the simulation may not import the engine: it goes
+        through game/view.py, which hands back a real node when there is a
+        scene and a node that quietly forgets everything when there is
+        not.
+
+        Panda3D is loaded long before this suite starts, so the block only
+        works in a fresh interpreter: the real check is a subprocess that
+        refuses the import at the hook and then grows crops anyway.
+        """
+        import subprocess
+
+        root = Path(__file__).resolve().parents[2]
+        done = subprocess.run(
+            [sys.executable, "-X", "utf8", "-m",
+             "patisson2.tools.headless_check"],
+            cwd=str(root), capture_output=True, text=True, timeout=300)
+        out = (done.stdout or "") + (done.stderr or "")
+        assert done.returncode == 0, \
+            f"симуляция не поднялась без движка:\n{out.strip()[-600:]}"
+        assert "симуляция поднялась" in out, f"неожиданный вывод: {out[-300:]}"
+    check("симуляция живёт без движка", simulation_runs_without_the_engine)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
