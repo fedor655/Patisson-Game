@@ -315,12 +315,24 @@ class Props:
         There are only four point lights, so rather than pinning them to fixed
         lanterns the update picks whichever emitters are nearest the player.
         """
-        spots = [(2.0, -7.0), (8.6, 5.6), (-12.0, -3.6), (14.6, -9.0),
-                 (-17.0, -12.4), (12.6, -16.2)]
-        for x, y in spots:
+        # (x, y, arm heading): the lamp used to be placed 1.35 m up with
+        # nothing beneath it — lanterns floating in mid-air. Each one now
+        # hangs off the hook of a lamppost, and the post is solid. Headings
+        # are fixed rather than drawn from self.rng: an extra draw here
+        # would reshuffle every placement after this call.
+        spots = [(2.0, -7.0, 40.0), (8.6, 5.6, 200.0), (-12.0, -3.6, 120.0),
+                 (14.6, -9.0, 300.0), (-17.0, -12.4, 20.0),
+                 (12.6, -16.2, 250.0)]
+        for x, y, h in spots:
             z = self.ground(x, y)
-            place(self.root, "lantern", (x, y, z + 1.35), 0, 1.0)
-            self.lanterns.append((Vec3(x, y, z + 1.45), False))
+            place(self.root, "lamppost", (x, y, z), h, 1.0)
+            # The hook sits 0.28 m out along the arm; the lantern's top ring
+            # is 0.40 m above its own base, so the base lands at 1.05.
+            a = math.radians(h)
+            lx, ly = x - math.sin(a) * 0.28, y + math.cos(a) * 0.28
+            place(self.root, "lantern", (lx, ly, z + 1.05), h, 1.0)
+            self.world.blockers.add_post(x, y, 0.14, top=1.7)
+            self.lanterns.append((Vec3(lx, ly, z + 1.19), False))
         # A fire inside the house: the only thing that makes the interior
         # readable, since no sunlight reaches in through solid walls.
         if self.hearth_pos is not None:

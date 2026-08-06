@@ -752,6 +752,27 @@ def make_lantern():
                  emissive=(1.0, 0.72, 0.34), double_sided=True)]
 
 
+def make_lamppost():
+    """A post with an arm to hang a lantern from.
+
+    The yard lanterns used to be placed 1.35 m up with nothing beneath:
+    lamps floating in mid-air, which the player photographed on day one.
+    """
+    wood = Mesh()
+    iron = Mesh()
+    wood.extend(revolve([(0.085, 0.0), (0.075, 0.9), (0.058, 1.60)], 8, WOOD))
+    # Arm reaching out along +Y, with a small brace back to the post.
+    wood.extend(box(0.055, 0.42, 0.055, WOOD_DARK, origin="base")
+                .translate(0, 0.11, 1.52))
+    wood.extend(box(0.04, 0.30, 0.04, WOOD_DARK, origin="base")
+                .rotate_x(-45).translate(0, 0.06, 1.30))
+    # Hook at the arm's end; the lantern hangs from here.
+    iron.extend(tube([(0.0, 0.28, 1.52), (0.0, 0.28, 1.455)],
+                     [0.012, 0.011], IRON, 6))
+    return [Part(wood, "wood", roughness=0.88),
+            Part(iron, "iron", roughness=0.45, metallic=0.7)]
+
+
 def make_watering_can():
     body = revolve([(0.001, 0.0), (0.11, 0.0), (0.12, 0.20), (0.10, 0.24)], 14, WATER_CAN)
     spout = tube([(0.09, 0, 0.06), (0.22, 0, 0.13), (0.30, 0, 0.22)],
@@ -1263,6 +1284,7 @@ MODELS = {
     "signpost": make_signpost,
     "scarecrow": make_scarecrow,
     "cooking_pot": make_cooking_pot,
+    "lamppost": make_lamppost,
     "crate": make_crate,
     "barrel": make_barrel,
     "bucket": make_bucket,

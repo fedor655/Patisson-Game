@@ -1099,6 +1099,35 @@ def run() -> int:
             f"в колодце трава, а не вода (зелёность {greenness:.1f})"
     check("в колодце вода", well_holds_water)
 
+    def lanterns_hang_on_something():
+        """Every outdoor lantern needs a post under it, not thin air.
+
+        The yard lamps were placed 1.35 m above the ground with nothing
+        beneath — the player photographed one floating beside the house.
+        Each now hangs off the hook of a solid lamppost. The check probes
+        the collision grid around every outdoor lantern and requires
+        something there to push against.
+        """
+        outdoor = [(p.x, p.y) for p, indoor in app.props.lanterns
+                   if not indoor]
+        assert outdoor, "уличных фонарей не нашлось"
+        for lx, ly in outdoor:
+            held = False
+            for dx in (-0.3, -0.15, 0.0, 0.15, 0.3):
+                for dy in (-0.3, -0.15, 0.0, 0.15, 0.3):
+                    px, py = lx + dx, ly + dy
+                    gz = app.world.height_at(px, py)
+                    nx, ny = app.world.blockers.resolve(px, py, 0.05, gz)
+                    if (nx - px) ** 2 + (ny - py) ** 2 > 1e-8:
+                        held = True
+                        break
+                if held:
+                    break
+            assert held, \
+                f"фонарь ({lx:.1f}, {ly:.1f}) висит в воздухе — " \
+                f"под ним ничего не стоит"
+    check("фонари висят на столбах", lanterns_hang_on_something)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
