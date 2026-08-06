@@ -137,8 +137,16 @@ class Upgrades:
 
     @property
     def water_radius(self) -> float:
-        """Plots within this distance of the target get watered too."""
-        return (0.0, 0.0, 2.4)[self.can - 1]
+        """Plots within this distance of the target get watered too.
+
+        Beds sit 1.5 apart, so 1.6 reaches the four beds sharing an edge and
+        2.4 also takes the diagonals: one bed, then five, then nine. Tier 2
+        used to be 0.0 — the only upgrade in the shop that moved a number
+        without changing how the tool behaves, and the class docstring above
+        promised otherwise. Watering a 24-bed farm properly costs about 82
+        pours a day; the golden can took that chore from 93 actions to 87.
+        """
+        return (0.0, 1.6, 2.4)[self.can - 1]
 
     # --- hoe ---
     @property
@@ -195,16 +203,21 @@ TOOL_TIERS = {
         ("Мотыга-веер", 520, "Вскапывает участок 3×3 за раз."),
     ],
     "can": [
-        ("Золотая лейка", 220, "Больше воды: 18 вместо 8."),
-        ("Лейка-дождевик", 600, "34 воды и поливает соседние грядки."),
+        ("Золотая лейка", 220, "18 воды и поливает грядку с соседями крест-накрест."),
+        ("Лейка-дождевик", 600, "34 воды и поливает участок 3×3."),
     ],
     "rod": [
         ("Крепкая удочка", 200, "Клюёт быстрее, окно подсечки шире."),
         ("Зачарованная удочка", 540, "Метка медленнее, редкая рыба чаще."),
     ],
+    # The basket is the only upgrade that prints coins rather than saving
+    # work, and it prints a lot: one extra fruit on every bed more than
+    # doubles what the farm earns. At 160 it was the cheapest thing in the
+    # shop and paid for itself in half a day, so the first purchase was
+    # never a decision. Priced against what it yields, like everything else.
     "basket": [
-        ("Плетёная корзина", 160, "На один плод больше с каждой грядки."),
-        ("Корзина коробейника", 480, "Ещё плод и +25% к цене продажи."),
+        ("Плетёная корзина", 340, "На один плод больше с каждой грядки."),
+        ("Корзина коробейника", 900, "Ещё плод и +25% к цене продажи."),
     ],
 }
 

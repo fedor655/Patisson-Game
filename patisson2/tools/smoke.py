@@ -514,22 +514,27 @@ def run() -> int:
                 st.upgrades.can = tier
                 assert st.upgrades.can_capacity == want, \
                     f"лейка т{tier}: ёмкость {st.upgrades.can_capacity}"
-            target = app.farm.plots[7]
+            # Beds soaked by one press, the way the hoe is counted: one, then
+            # the four sharing an edge, then the diagonals too. Tier 2 used
+            # to wet exactly one bed like tier 1 — 220 coins for a bigger
+            # tank and nothing else.
+            target = app.farm.plots[9]          # inside the grid, not an edge
             near = [p for p in app.farm.plots if p is not target
                     and abs(p.x - target.x) <= PLOT_SPACING + 0.1
                     and abs(p.y - target.y) <= PLOT_SPACING + 0.1]
-            assert near, "у грядки не нашлось соседей — проверка бессмысленна"
-            for tier, neighbours_wet in ((1, False), (3, True)):
+            assert len(near) == 8, \
+                f"у грядки {len(near)} соседей вместо 8 — проверка бессмысленна"
+            for tier, want in ((1, 1), (2, 5), (3, 9)):
                 st.upgrades.can = tier
                 for p in app.farm.plots:
                     p.crop, p.water = "patisson", 0.0
-                st.water, st.tool_index = 30.0, 1
+                st.water, st.tool_index = 40.0, 1
                 stand(target.x, target.y - 0.9)
                 app.on_interact()
                 assert target.water > 0.0, f"лейка т{tier}: цель не полита"
-                wet = any(p.water > 0.0 for p in near)
-                assert wet == neighbours_wet, \
-                    f"лейка т{tier}: соседи политы={wet}, ждали {neighbours_wet}"
+                wet = 1 + sum(1 for p in near if p.water > 0.0)
+                assert wet == want, \
+                    f"лейка т{tier}: полито грядок {wet}, ждали {want}"
 
             # --- basket: fruit per bed, and the sale multiplier ----------
             for tier, want in ((1, 1), (2, 2), (3, 3)):
@@ -580,6 +585,42 @@ def run() -> int:
             (st.upgrades.hoe, st.upgrades.can,
              st.upgrades.rod, st.upgrades.basket) = keep
     check("тиры делают что обещано", tiers_do_what_the_shop_says)
+
+    def upgrades_are_not_free_money():
+        """No upgrade may pay for itself in under an in-game day of farming.
+
+        The basket is the one tool that prints coins instead of saving
+        work, and it prints a lot: one more fruit on every bed more than
+        doubles what the farm earns. At 160 coins it was also the cheapest
+        thing in the shop, so it paid itself back in half a day and "what
+        do I buy first" had exactly one answer — the other three tools
+        were scenery. Measured against the most profitable crop, which is
+        the harshest reading of the rule.
+        """
+        from ..game.farming import CROPS, CROP_ORDER, days_to_ripe
+        from ..game.state import TOOL_TIERS, Upgrades
+        from ..world.layout import PLOT_COLS, PLOT_ROWS
+
+        beds = PLOT_COLS * PLOT_ROWS
+
+        def farm_income(level):
+            up = Upgrades(basket=level)
+            best = 0.0
+            for key in CROP_ORDER:
+                crop = CROPS[key]
+                fruit = crop.yield_count + up.harvest_bonus
+                gross = fruit * crop.sell_price * up.sell_multiplier
+                best = max(best, (gross - crop.seed_price) / days_to_ripe(crop))
+            return best * beds
+
+        for level, (name, price, _d) in enumerate(TOOL_TIERS["basket"], 2):
+            gain = farm_income(level) - farm_income(level - 1)
+            assert gain > 0.0, f"{name}: не добавляет дохода вовсе"
+            days = price / gain
+            assert days >= 1.0, \
+                f"{name}: окупается за {days:.2f} дн. — за {price} мон. " \
+                f"ферма начинает приносить +{gain:.0f} мон./день"
+    check("улучшения не окупаются мгновенно", upgrades_are_not_free_money)
 
     def tables_are_wired():
         """Every entry in every declaration table must be both produced and
