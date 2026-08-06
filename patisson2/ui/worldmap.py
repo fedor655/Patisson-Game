@@ -303,6 +303,35 @@ class WorldMap:
     def selected(self):
         return self.landmarks[self.cursor]
 
+    def arrival(self, x: float, y: float, radius: float = 0.34):
+        """Somewhere beside a landmark that a person can actually stand.
+
+        A landmark marks the thing itself — the well, the stall, the middle of
+        the pond — and those are exactly the places you cannot be. Travelling
+        used to drop the player inside the well's post, inside the stall, or
+        three and a half metres under the surface of the pond.
+        """
+        ground = self.world.height_at(x, y)
+        water = self.cfg.water_level
+
+        # Out of the water first: step away from the pond until on dry land.
+        if ground < water:
+            px, py = POND_CENTRE
+            dx, dy = x - px, y - py
+            length = math.hypot(dx, dy)
+            if length < 1e-3:
+                dx, dy, length = 1.0, -1.0, math.sqrt(2.0)
+            dx, dy = dx / length, dy / length
+            for step in range(1, 80):
+                cx, cy = x + dx * step * 0.5, y + dy * step * 0.5
+                if self.world.height_at(cx, cy) >= water + 0.05:
+                    x, y = cx, cy
+                    break
+
+        # Then out of anything solid standing there.
+        z = self.world.height_at(x, y) + 0.9
+        return self.world.blockers.resolve(x, y, radius, z)[:2]
+
     def travel_cost(self, player_pos) -> float:
         """Seconds of in-game time the walk would have taken."""
         _label, (tx, ty), _kind = self.selected()

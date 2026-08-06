@@ -230,6 +230,37 @@ def run() -> int:
         assert app.tutorial.finished, "обучение не считает себя пройденным"
     check("обучение проходится", tutorial_completes)
 
+    def travel_lands_somewhere_standable():
+        """Fast travel must put the player where a person can be.
+
+        A landmark marks the thing — the well, the stall, the middle of the
+        pond — and those are the places you cannot stand. Travel used to drop
+        the player inside the well's post, inside the stall, and three and a
+        half metres under the surface of the pond.
+        """
+        import math
+
+        water = app.cfg.world.water_level
+        for i, (label, (x, y), _kind) in enumerate(app.worldmap.landmarks):
+            ax, ay = app.worldmap.arrival(x, y)
+            ground = app.world.height_at(ax, ay)
+            assert ground >= water, \
+                f"«{label}»: перенос под воду ({ground:.2f} < {water})"
+            pushed = app.world.blockers.resolve(ax, ay, 0.34, ground + 0.9)[:2]
+            shove = math.hypot(pushed[0] - ax, pushed[1] - ay)
+            assert shove < 0.05, \
+                f"«{label}»: перенос внутрь препятствия (выталкивает {shove:.2f} м)"
+
+            # And through the key path, from far enough away to actually move.
+            app.worldmap.cursor = i
+            app.player.pos.x, app.player.pos.y = 60.0, 60.0
+            app.worldmap.visible = True
+            app.travel_to_selected()
+            p = app.player.pos
+            here = app.world.height_at(p.x, p.y)
+            assert here >= water, f"«{label}»: игрок оказался в воде"
+    check("перенос ставит на твёрдое", travel_lands_somewhere_standable)
+
     def schedules_are_walkable():
         """Villagers must stand somewhere a person could stand, and get there.
 

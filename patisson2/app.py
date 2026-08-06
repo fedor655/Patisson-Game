@@ -559,6 +559,9 @@ class PatissonApp(ShowBase):
             self.state.notify("Вы уже здесь")
             return
         self.cycle.total_time += seconds
+        # Land beside the landmark, not inside it: the well and the stall are
+        # solid, and the pond's marker is the middle of the water.
+        tx, ty = self.worldmap.arrival(tx, ty)
         self.player.pos.x, self.player.pos.y = tx, ty
         self.player.pos.z = self.world.height_at(tx, ty)
         self.player.vel.set(0, 0, 0)
