@@ -18,6 +18,7 @@ import sys
 
 from kivy.app import App
 from kivy.clock import Clock
+from kivy.core.text import Label as CoreLabel
 from kivy.core.window import Window
 from kivy.graphics import Color, Ellipse, Line, Rectangle
 from kivy.uix.boxlayout import BoxLayout
@@ -36,11 +37,14 @@ TOOLS = [
     ("hoe", "Мотыга", "weed"),
     ("seeds", "Семена", "plant"),
     ("basket", "Корзина", "harvest"),
+    ("fert", "Удобрить", "feed"),
 ]
 CROPS = ["patisson", "carrot", "tomato", "wheat", "pumpkin"]
 CROP_NAMES = {"patisson": "Патиссон", "carrot": "Морковь", "tomato": "Томат",
               "wheat": "Пшеница", "pumpkin": "Тыква"}
 SEASONS = ["Весна", "Лето", "Осень", "Зима"]
+# Сколько ждать перед новой попыткой дозвониться.
+RETRY_SECONDS = 5.0
 WEATHER = {"clear": "Ясно", "cloudy": "Облачно", "rain": "Дождь",
            "snow": "Снег"}
 
@@ -53,6 +57,7 @@ class FarmView(Widget):
         self.link = link
         self.tool = 0
         self.crop = 0
+        self._name_textures: dict = {}
         self.bind(pos=lambda *_a: self.redraw(),
                   size=lambda *_a: self.redraw())
 
@@ -119,6 +124,20 @@ class FarmView(Widget):
                 mine = entry.get("id") == self.link.player_id
                 Color(1.0, 0.86, 0.35) if mine else Color(0.55, 0.75, 1.0)
                 Ellipse(pos=(px - 9, py - 9), size=(18, 18))
+                if not mine:
+                    self._draw_name(px, py, entry.get("name", "?"))
+
+    def _draw_name(self, px, py, name):
+        """Кто это стоит на грядках. Точка без имени ничего не говорит."""
+        tex = self._name_textures.get(name)
+        if tex is None:
+            label = CoreLabel(text=str(name)[:14], font_size=13)
+            label.refresh()
+            tex = label.texture
+            self._name_textures[name] = tex
+        Color(1, 1, 1, 0.92)
+        Rectangle(texture=tex, pos=(px - tex.width / 2, py + 11),
+                  size=tex.size)
 
     def _draw_bed(self, px, py, size, plot):
         half = size / 2.0
@@ -167,6 +186,7 @@ class PatissonMobile(App):
     def __init__(self, host: str, port: int, name: str, **kwargs):
         super().__init__(**kwargs)
         self.link = FarmLink(host, port, name)
+        self._retry_in = RETRY_SECONDS
 
     def build(self):
         Window.clearcolor = (0.08, 0.09, 0.07, 1)
@@ -191,23 +211,32 @@ class PatissonMobile(App):
                           font_size=14, color=(0.85, 0.9, 0.8, 1))
         root.add_widget(self.news)
 
-        bar = BoxLayout(size_hint=(1, None), height=64, spacing=4,
-                        padding=4)
+        # Два ряда: чем работать по грядке, и что делать со всей фермой.
+        tools_bar = BoxLayout(size_hint=(1, None), height=58, spacing=3,
+                              padding=3)
         self.tool_buttons = []
         for index, (_key, label, _action) in enumerate(TOOLS):
-            btn = Button(text=label, font_size=16)
+            btn = Button(text=label, font_size=15)
             btn.bind(on_release=lambda _b, i=index: self.pick_tool(i))
-            bar.add_widget(btn)
+            tools_bar.add_widget(btn)
             self.tool_buttons.append(btn)
-        crop_btn = Button(text="Патиссон", font_size=16)
-        crop_btn.bind(on_release=lambda _b: self.next_crop())
-        bar.add_widget(crop_btn)
-        self.crop_button = crop_btn
-        sell = Button(text="Продать", font_size=16)
-        sell.bind(on_release=lambda _b: self.link.act("sell"))
-        bar.add_widget(sell)
-        root.add_widget(bar)
+        root.add_widget(tools_bar)
 
+        farm_bar = BoxLayout(size_hint=(1, None), height=58, spacing=3,
+                             padding=3)
+        self.crop_button = Button(text="Патиссон", font_size=15)
+        self.crop_button.bind(on_release=lambda _b: self.next_crop())
+        farm_bar.add_widget(self.crop_button)
+        sell = Button(text="Продать", font_size=15)
+        sell.bind(on_release=lambda _b: self.link.act("sell"))
+        farm_bar.add_widget(sell)
+        # Разваленное пугало — это вороны на каждой спелой грядке, и
+        # починить его должен уметь тот, кто рядом, хоть с телефона.
+        scare = Button(text="Пугало", font_size=15)
+        scare.bind(on_release=lambda _b: self.link.act("repair"))
+        farm_bar.add_widget(scare)
+        self.scare_button = scare
+        root.add_widget(farm_bar)
         self.pick_tool(0)
         Clock.schedule_interval(self.tick, 1.0 / 20.0)
         return root
@@ -226,11 +255,28 @@ class PatissonMobile(App):
         self.view.crop = (self.view.crop + 1) % len(CROPS)
         self.crop_button.text = CROP_NAMES[CROPS[self.view.crop]]
 
+    def reconnect(self):
+        """Свежая попытка дозвониться до той же фермы."""
+        self._retry_in = RETRY_SECONDS
+        old = self.link
+        self.link = FarmLink(old.host, old.port, old.name)
+        self.view.link = self.link
+        old.close()
+
     def tick(self, _dt):
         fresh = self.link.pump()
         if self.link.status == "failed":
-            self.status.text = self.link.error or "Связь потеряна"
+            # Телефон теряет сеть постоянно — в лифте, в метро, на даче.
+            # Замереть с пустым экраном хуже, чем сказать, что случилось,
+            # и попробовать вернуться самому.
+            self._retry_in -= _dt
+            left = max(0, int(self._retry_in) + 1)
+            self.status.text = (f"{self.link.error or 'Связь потеряна'} — "
+                                f"пробую снова через {left} с")
+            if self._retry_in <= 0.0:
+                self.reconnect()
             return
+        self._retry_in = RETRY_SECONDS
         if self.link.status != "online":
             return
         clock = self.link.clock

@@ -225,11 +225,21 @@ class FarmServer:
             writer.close()
 
     async def broadcast(self, message: dict) -> None:
+        """Tell everyone, and let no single connection take the farm down.
+
+        This used to catch two kinds of failure. Anything else -- a socket
+        in a state nobody expected, a half-closed handle -- escaped into
+        the tick loop, and since the loop is gathered with the listener,
+        one bad connection stopped the world for everybody still playing.
+        A broken pipe is that player's problem; it is not the farm's.
+        """
         dead = []
         for player in list(self.players.values()):
             try:
                 await protocol.write_message(player.writer, message)
-            except (ConnectionResetError, BrokenPipeError):
+            except Exception as exc:                        # noqa: BLE001
+                print(f"[!] {player.name} (#{player.id}) отвалился: "
+                      f"{type(exc).__name__}", flush=True)
                 dead.append(player.id)
         for pid in dead:
             self.players.pop(pid, None)
@@ -241,10 +251,12 @@ class FarmServer:
         while True:
             await asyncio.sleep(step)
             self.tick += 1
-            if self.players:
+            if not self.players:
                 # A farm nobody is standing on does not rot: left running
                 # empty, the scarecrow fell apart and the crows stripped
                 # every ripe bed with nobody there to mend it.
+                continue
+            try:
                 events = self.world.update(step)
                 if events:
                     self._pending.extend(events)
@@ -254,6 +266,15 @@ class FarmServer:
                     self._pending.clear()
                 if time.monotonic() - self._last_save > SAVE_EVERY:
                     self.save()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:                        # noqa: BLE001
+                # The tick loop is gathered with the listener, so an
+                # exception here does not just skip a frame -- it stops the
+                # world for everyone still on the farm. Losing one tick is
+                # a hiccup; losing the loop is the end of the session.
+                print(f"[!] тик пропущен: {type(exc).__name__}: {exc}",
+                      flush=True)
 
     def load(self) -> bool:
         """Read the shared world back, or start a new farm."""

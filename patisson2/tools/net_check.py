@@ -161,6 +161,7 @@ async def run() -> int:
         problems.extend(await check_phone(server, port))
         problems.extend(check_restart())
         problems.extend(await check_rubbish(port))
+        problems.extend(await check_broken_connection(server, port))
     finally:
         ticker.cancel()
         tcp.close()
@@ -353,6 +354,34 @@ async def check_rubbish(port: int) -> list[str]:
     answer = await guest.connect(port)
     if answer.get("t") != "welcome":
         problems.append(f"после мусора живой игрок не зашёл: {answer}")
+    await guest.close()
+    return problems
+
+async def check_broken_connection(server, port: int) -> list[str]:
+    """Одна испорченная связь не должна останавливать мир для всех.
+
+    Рассылка ловила два вида ошибок. Любая другая — сокет в состоянии,
+    которого никто не ждал, — уходила в тик-цикл, а он собран вместе со
+    слушателем: значит, одно битое соединение останавливало ферму для
+    всех, кто на ней ещё играл. Потерянный тик — это икота, потерянный
+    цикл — конец сессии.
+    """
+    from ..net.server import Player
+
+    problems: list[str] = []
+    guest = Client("Живой")
+    await guest.connect(port)
+    server.players[9999] = Player(9999, "Призрак", None)
+    before = server.world.cycle.total_time
+    await asyncio.sleep(0.8)
+    if 9999 in server.players:
+        problems.append("сломанное соединение осталось в списке игроков")
+    if server.world.cycle.total_time <= before:
+        problems.append("после сломанного соединения часы фермы встали")
+    await guest.act("plant", 11, "patisson")
+    await asyncio.sleep(0.4)
+    if server.world.farm.plots[11].crop != "patisson":
+        problems.append("после сломанного соединения сервер перестал слушать живых")
     await guest.close()
     return problems
 
