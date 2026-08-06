@@ -1128,6 +1128,58 @@ def run() -> int:
                 f"под ним ничего не стоит"
     check("фонари висят на столбах", lanterns_hang_on_something)
 
+    def trees_sway_out_of_step():
+        """Neighbouring trees must sway to their own beat, not one metronome.
+
+        Static dressing is flattened into 40 m batching tiles, and the wind
+        phase came from the node origin — one model matrix per tile, so every
+        tree in a tile swayed identically ("все деревья качаются одинаково").
+        The phase now comes from the vertex's own world position.
+
+        Measured through pixels: two crown windows are rendered 0.15 s apart
+        at several frozen times; each window's diff is proportional to its
+        crown's |cos(t + phase)|, so the log-ratio of the two is constant
+        when the phases are locked (variance 0.0003 on the old shader) and
+        swings when they are not (1.07 on the new one).
+        """
+        import os
+        import tempfile
+
+        import numpy as np
+        from panda3d.core import Filename
+        from PIL import Image
+
+        day = app.cfg.game.day_length
+        app.cycle.total_time = app.cycle.day * day + 10.0 / 24.0 * day
+        stand(-6.0, 24.0, -90.0, 4.0)
+        for _ in range(4):
+            app.taskMgr.step()
+        path = os.path.join(tempfile.mkdtemp(prefix="patisson-sway-"),
+                            "f.png")
+
+        def frame(t):
+            app.pipeline.pta_time.setElement(0, t)
+            app.graphicsEngine.renderFrame()
+            app.graphicsEngine.renderFrame()
+            app.win.saveScreenshot(Filename.fromOsSpecific(path))
+            return np.asarray(Image.open(path).convert("L"), dtype=np.int16)
+
+        h, w = app.cfg.graphics.height, app.cfg.graphics.width
+        win_a = (slice(int(h * 0.327), int(h * 0.462)),
+                 slice(int(w * 0.089), int(w * 0.289)))
+        win_b = (slice(int(h * 0.404), int(h * 0.577)),
+                 slice(int(w * 0.589), int(w * 0.778)))
+        ratios = []
+        for t in (50.0, 50.45, 50.9, 51.35, 51.8):
+            d = np.abs(frame(t) - frame(t + 0.15))
+            sa = float(d[win_a].sum()) + 1.0
+            sb = float(d[win_b].sum()) + 1.0
+            ratios.append(np.log(sa / sb))
+        spread = float(np.var(ratios))
+        assert spread > 0.05, \
+            f"кроны качаются в одной фазе (разброс {spread:.4f})"
+    check("деревья качаются вразнобой", trees_sway_out_of_step)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
