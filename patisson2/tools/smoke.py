@@ -1584,7 +1584,25 @@ def run() -> int:
 
             # Somebody else standing there becomes an avatar.
             from ..net.server import Player as ServerPlayer
-            ghost = ServerPlayer(999, "Сосед", None)
+
+            class Deaf:
+                """A neighbour who listens and never writes back.
+
+                Given no writer at all the server now drops them on the
+                first broadcast — which is the right thing for a dead
+                socket and useless for a stand-in.
+                """
+
+                def write(self, _data):
+                    pass
+
+                async def drain(self):
+                    pass
+
+                def close(self):
+                    pass
+
+            ghost = ServerPlayer(999, "Сосед", Deaf())
             ghost.x, ghost.y, ghost.z = 4.0, 4.0, 0.0
             server.players[999] = ghost
             for _ in range(120):
@@ -1594,6 +1612,61 @@ def run() -> int:
             assert 999 in app.net.avatars, \
                 f"сосед не появился: {list(app.net.avatars)}"
             assert app.net.avatars[999].name == "Сосед"
+
+            # And the corner says who is here and how far off they are.
+            # A name over a head helps only while the head is on screen.
+            import math as _math
+            roster = app.hud.players_text.getText()
+            away = _math.hypot(4.0 - app.player.pos.x, 4.0 - app.player.pos.y)
+            assert f"Сосед — {away:.0f} м" in roster, \
+                f"соседа нет в списке или он не там ({away:.1f} м): {roster!r}"
+
+            # The name over the head has to be *drawn*, not merely present.
+            # It was a node in the scene, unhidden, in exactly the right
+            # place — and invisible: the text belonged to aspect2d, where
+            # its scale and its shading lived, and hanging the bare node
+            # under render brought neither. Only pixels catch that.
+            import os as _os
+            import tempfile as _tf
+
+            import numpy as _np
+            from panda3d.core import Filename as _Fn
+            from panda3d.core import Point2 as _P2
+            from panda3d.core import Point3 as _P3
+            from PIL import Image as _Im
+            tag = app.net.avatars[999].label
+            assert tag is not None, "у соседа нет таблички с именем"
+            gz = app.world.height_at(30.0, 36.0)
+            ghost.x, ghost.y, ghost.z = 30.0, 36.0, gz
+            for _ in range(120):
+                app.taskMgr.step()
+                if abs(app.net.avatars[999].node.getY() - 36.0) < 0.5:
+                    break
+            stand(30.0, 30.0, heading=0.0, pitch=0.0)
+            app.taskMgr.step()
+            flat = _P2()
+            assert app.camLens.project(
+                app.cam.getRelativePoint(app.render, _P3(30.0, 36.0, gz + 2.05)),
+                flat), "табличка соседа вне кадра — проверка ничего не смотрит"
+            out = _tf.mkdtemp(prefix="patisson-tag-")
+            frames = []
+            for i, hidden in enumerate((False, True)):
+                tag.hide() if hidden else tag.show()
+                app.graphicsEngine.renderFrame()
+                app.graphicsEngine.renderFrame()
+                path = _os.path.join(out, f"tag{i}.png")
+                app.win.saveScreenshot(_Fn.fromOsSpecific(path))
+                frames.append(_np.asarray(_Im.open(path).convert("L"),
+                                          dtype=_np.int16))
+            tag.show()
+            h, w = frames[0].shape
+            cx = int((flat.x * 0.5 + 0.5) * w)
+            cy = int((1.0 - (flat.y * 0.5 + 0.5)) * h)
+            box = (slice(max(0, cy - 45), cy + 45),
+                   slice(max(0, cx - 110), cx + 110))
+            drawn = float(_np.abs(frames[0][box] - frames[1][box]).mean())
+            assert drawn > 1.0, \
+                f"имя над головой не рисуется (яркость меняется на {drawn:.3f})"
 
             # Pressing the can is a request, not a result.
             bed = app.farm.plots[3]
@@ -1618,6 +1691,14 @@ def run() -> int:
             for _ in range(30):
                 app.taskMgr.step()
             assert app.cycle.total_time != before or True  # server drives it
+
+            # Leaving takes the roster with it. A corner listing company
+            # on a farm you are alone on is a lie you keep looking at.
+            app.net.leave()
+            app.taskMgr.step()
+            assert app.hud.players_text.getText() == "", \
+                ("список игроков остался после выхода: "
+                 f"{app.hud.players_text.getText()!r}")
         finally:
             if app.net is not None:
                 app.net.leave()
@@ -1690,6 +1771,48 @@ def run() -> int:
             app.settings["server"], app.settings["player_name"] = keep
             app.menu._build_root()
     check("адрес фермы вводится в меню", network_address_is_typed_in_the_game)
+
+    def the_roster_counts_everybody():
+        """Список в углу: сам первым, остальные по близости, никого не терять.
+
+        Расстояние здесь — не украшение: без него список отвечает «Борис
+        где-то тут», а с ним — «Борис у пруда». Поэтому число должно быть
+        настоящим, а не первым попавшимся.
+        """
+        from ..net.session import ROSTER_LIMIT, roster_lines
+
+        me = {"id": 1, "name": "Фёдор", "p": [0.0, 0.0, 0.0]}
+        near = {"id": 2, "name": "Борис", "p": [3.0, 4.0, 0.0]}      # 5 м
+        far = {"id": 3, "name": "Марта", "p": [0.0, 30.0, 0.0]}      # 30 м
+
+        lines = roster_lines([far, me, near], 1, 0.0, 0.0)
+        assert lines[0] == "На ферме: 3", f"неверная шапка: {lines[0]!r}"
+        assert lines[1] == "Фёдор — вы", f"себя не видно первым: {lines}"
+        assert lines[2] == "Борис — 5 м", f"ближний не второй: {lines}"
+        assert lines[3] == "Марта — 30 м", f"дальний не третий: {lines}"
+
+        # Считается от того места, где стоит игрок, а не от нуля координат.
+        moved = roster_lines([me, near], 1, 3.0, 0.0)
+        assert "Борис — 4 м" in moved, f"расстояние не от игрока: {moved}"
+
+        crowd = [me] + [{"id": 10 + i, "name": f"Гость{i}",
+                         "p": [float(i + 1), 0.0, 0.0]}
+                        for i in range(ROSTER_LIMIT + 3)]
+        big = roster_lines(crowd, 1, 0.0, 0.0)
+        assert len([ln for ln in big if ln.endswith(" м")]) == ROSTER_LIMIT, \
+            f"в углу не {ROSTER_LIMIT} имён: {big}"
+        assert big[-1] == "и ещё 3", f"о спрятанных не сказано: {big}"
+        assert big[0] == f"На ферме: {len(crowd)}", \
+            f"шапка не считает всех: {big[0]!r}"
+        assert roster_lines([], 1, 0.0, 0.0) == [], \
+            "на пустой ферме список всё равно что-то пишет"
+
+        app.hud.set_players(lines)
+        assert "Борис — 5 м" in app.hud.players_text.getText(), \
+            f"список не доехал до экрана: {app.hud.players_text.getText()!r}"
+        app.hud.set_players([])
+        assert app.hud.players_text.getText() == "", "список не убирается"
+    check("кто ещё на ферме", the_roster_counts_everybody)
 
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),

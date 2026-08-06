@@ -102,6 +102,12 @@ class HUD:
         self.fish_text = text((1.72, 0.835), 0.044, TextNode.ARight, DIM)
         self.water_text = text((1.72, 0.775), 0.044, TextNode.ARight, (0.62, 0.84, 1.0, 1))
 
+        # Who else is on the farm. Empty in a single-player game — the
+        # corner is only spent when there is somebody to name. The left
+        # column is taken by the clock and the tutorial panel, so this
+        # goes under the purse on the right.
+        self.players_text = text((1.72, 0.700), 0.036, TextNode.ARight, DIM)
+
         self.prompt = text((0, -0.30), 0.052, TextNode.ACenter, GREEN)
         self.tooltip = text((0, -0.38), 0.040, TextNode.ACenter, DIM)
 
@@ -574,6 +580,10 @@ class HUD:
         if self._last.get(id(node)) != value:
             self._last[id(node)] = value
             node.setText(value)
+
+    def set_players(self, lines) -> None:
+        """The roster of a hosted farm. An empty list clears the corner."""
+        self._set(self.players_text, "\n".join(lines))
 
     def _set_tool(self, i: int, value: str):
         """Tool caption: shrink to fit the slot, stay on its centre line.

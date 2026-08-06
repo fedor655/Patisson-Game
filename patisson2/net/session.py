@@ -15,8 +15,52 @@ model with their name over it.
 
 from __future__ import annotations
 
+import math
+
 from ..game.view import place
 from .client import NetClient, apply_state
+
+ROSTER_LIMIT = 5           # names in the corner before it starts counting
+
+
+def roster_lines(players: list, me_id, x: float, y: float,
+                 limit: int = ROSTER_LIMIT) -> list[str]:
+    """Who is on the farm: you first, then the others, nearest first.
+
+    A name floating over somebody's head only helps while they are on
+    screen, and a farm is mostly not on screen — the person you are
+    looking for is as likely to be behind the barn as in front of you.
+    So the corner carries the whole roster, and every name carries the
+    distance to its owner: that is the number that turns "Борис is here
+    somewhere" into "Борис is over by the pond".
+
+    Kept a plain function, away from the renderer, so the arithmetic can
+    be checked without a window open.
+    """
+    if not players:
+        return []
+    mine: list[str] = []
+    others: list[tuple[float, str]] = []
+    for entry in players:
+        name = str(entry.get("name") or "Фермер")
+        if entry.get("id") == me_id:
+            mine.append(f"{name} — вы")
+            continue
+        pos = entry.get("p") or (0.0, 0.0, 0.0)
+        try:
+            dx, dy = float(pos[0]) - x, float(pos[1]) - y
+        except (TypeError, ValueError, IndexError, KeyError):
+            dx = dy = 0.0
+        others.append((math.hypot(dx, dy), name))
+    others.sort()
+    lines = [f"На ферме: {len(players)}"] + mine
+    lines += [f"{name} — {dist:.0f} м" for dist, name in others[:limit]]
+    hidden = len(others) - len(others[:limit])
+    if hidden > 0:
+        # Never quietly drop somebody: a roster that shows five of nine
+        # and says nothing is worse than no roster at all.
+        lines.append(f"и ещё {hidden}")
+    return lines
 
 
 def parse_address(text: str, default_port: int) -> tuple[str, int]:
@@ -125,6 +169,14 @@ class NetSession:
                 avatar.label.setPos(pos[0], pos[1], pos[2] + 2.05)
         for pid in [p for p in self.avatars if p not in seen]:
             self.avatars.pop(pid).remove()
+        me = self.app.player.pos
+        self._show_roster(roster_lines(players, self.client.player_id,
+                                       me.x, me.y))
+
+    def _show_roster(self, lines: list[str]) -> None:
+        hud = getattr(self.app, "hud", None)
+        if hud is not None and hasattr(hud, "set_players"):
+            hud.set_players(lines)
 
     def _make_avatar(self, name: str, pos) -> Avatar:
         # There is no generic "villager" model: the three of them are
@@ -134,16 +186,28 @@ class NetSession:
                      (pos[0], pos[1], pos[2]), 0.0, 1.0)
         label = None
         try:
-            from direct.gui.OnscreenText import OnscreenText
+            # Built as a TextNode rather than by borrowing the node out of
+            # an OnscreenText. That trick left the text owned by aspect2d,
+            # where its scale lived: hung under render it kept its size but
+            # not its shading, and the tag was in the scene, unhidden, in
+            # the right place, and invisible on screen. Here the geometry,
+            # the scale and the render state all belong to one node.
             from panda3d.core import TextNode
-            label = self.app.render.attachNewNode(
-                OnscreenText(text=name, scale=0.34, fg=(1, 1, 1, 1),
-                             align=TextNode.ACenter, font=self.app.hud.font,
-                             mayChange=False,
-                             shadow=(0, 0, 0, 0.7)).node())
+            text = TextNode(f"name-{name}")
+            text.setText(name)
+            text.setAlign(TextNode.ACenter)
+            text.setTextColor(1, 1, 1, 1)
+            text.setShadow(0.06, 0.06)
+            text.setShadowColor(0, 0, 0, 0.85)
+            if self.app.hud.font is not None:
+                text.setFont(self.app.hud.font)
+            label = self.app.render.attachNewNode(text)
+            label.setScale(0.34)
             label.setBillboardPointEye()
             label.setLightOff()
-            label.setDepthOffset(1)
+            label.setShaderOff(10)             # the scene shader wants
+            label.setDepthWrite(False)         # normals; text has none
+            label.setBin("fixed", 40)
         except Exception:                      # noqa: BLE001 — a name tag is
             label = None                       # not worth failing a join for
         return Avatar(node, label, name)
@@ -154,6 +218,9 @@ class NetSession:
         for avatar in self.avatars.values():
             avatar.remove()
         self.avatars.clear()
+        # The corner belongs to the visit, not to the game: leaving it
+        # behind would list company on a farm you are alone on.
+        self._show_roster([])
         self.client.close()
         self.last_error = reason
         if self.app.net is self:
