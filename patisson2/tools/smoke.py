@@ -1424,6 +1424,46 @@ def run() -> int:
                 f"{name} в ({x:.1f}, {y:.1f}) проходим насквозь"
     check("ящики и бочки твёрдые", dressing_is_solid)
 
+    def icon_shows_the_game():
+        """The game must ship an icon of its own, and ask Windows for it.
+
+        Out of the box the shortcut carried the Python logo — the player
+        photographed it — because nothing told the window what to wear.
+        The icon is generated from the ripe patisson model, so it cannot
+        depict something the game does not contain, and it has to hold up
+        at 16 px in the taskbar.
+        """
+        from PIL import Image
+
+        from ..config import Config as _Config
+
+        root = Path(__file__).resolve().parents[2]
+        ico = root / "assets" / "icon.ico"
+        assert ico.exists(), "assets/icon.ico не собран"
+        with Image.open(ico) as im:
+            sizes = sorted(im.info.get("sizes", []))
+        assert (16, 16) in sizes, f"в иконке нет размера 16×16: {sizes}"
+        assert (256, 256) in sizes, f"в иконке нет размера 256×256: {sizes}"
+        # It must be the patisson on soil, not an empty or flat tile: the
+        # pale flesh has to stand out against the green field.
+        with Image.open(ico) as im:
+            im.size = (32, 32)
+            im.load()
+            small = im.convert("RGB")
+        pixels = list(small.getdata())
+        light = sum(1 for r, g, b in pixels if r > 170 and g > 170 and b < 200)
+        assert light > 40, \
+            f"на иконке не видно патиссона: светлых пикселей {light} из 1024"
+        # And the running game must actually request it.
+        cfg = _Config()
+        configure(cfg, offscreen=True)
+        from panda3d.core import ConfigVariableFilename
+        asked = str(ConfigVariableFilename("icon-filename", "").getValue())
+        assert asked, "окно игры не запрашивает иконку"
+        assert asked.lower().endswith("icon.ico"), \
+            f"окно просит не ту иконку: {asked}"
+    check("иконка показывает игру", icon_shows_the_game)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
