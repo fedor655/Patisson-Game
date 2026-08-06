@@ -880,9 +880,9 @@ class PatissonApp(ShowBase):
         tool = st.tool
         plot, _ = self._aim_plot()
         if tool == "hoe":
+            if plot is not None and plot.weeds >= 0.05:
+                return "[E] Прополоть", f"Сорняки: {plot.weeds*100:.0f}%"
             if plot is not None and plot.crop is None and plot.tilled:
-                if plot is not None and plot.weeds >= 0.05:
-                    return "[E] Прополоть", f"Сорняки: {plot.weeds*100:.0f}%"
                 return "", "Грядка уже вскопана"
             return "[E] Вскопать грядку", "Смотрите на землю"
         if tool == "can":
@@ -981,17 +981,22 @@ class PatissonApp(ShowBase):
         plot, target = self._aim_plot()
 
         if tool == "hoe":
+            # Weeds first, and for any bed in reach — planted or not, since
+            # weeds exist precisely to choke what is growing. This used to be
+            # nested inside `plot is None` and then look for a weedy bed within
+            # a *smaller* radius than the one that had just found a plot, so it
+            # could never run: the game showed "[E] Прополоть" and pressing E
+            # did nothing at all. The whole weeds mechanic was unreachable.
+            if plot is not None and plot.weeds >= 0.05:
+                self.farm.weed(plot)
+                self.sound("dig", 0.7)
+                st.weeded += 1
+                if st.weeded >= 20:
+                    st.unlock("gardener")
+                st.notify("Грядка прополота")
+                self.teach("weed")
+                return
             if plot is None and target is not None:
-                weedy = self.farm.nearest(target, 1.0)
-                if weedy is not None and weedy.weeds >= 0.05:
-                    self.farm.weed(weedy)
-                    self.sound("dig", 0.7)
-                    st.weeded = getattr(st, "weeded", 0) + 1
-                    if st.weeded >= 20:
-                        st.unlock("gardener")
-                    st.notify("Грядка прополота")
-                    self.teach("weed")
-                    return
                 from .world.layout import PLOT_SPACING
                 dug = 0
                 for ox, oy in st.upgrades.till_pattern:

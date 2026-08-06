@@ -45,6 +45,11 @@ def run() -> int:
         app.taskMgr.step()
 
     st = app.state
+    # Every field the game state is supposed to have, recorded before play
+    # starts. Anything that appears later was created by an assignment from
+    # outside __init__ — which is how the weeding counter came to exist
+    # without ever being saved, silently resetting that achievement on load.
+    declared_fields = set(vars(st))
     check("новая игра", app.menu_new_game)
     check("кадр", lambda: [app.taskMgr.step() for _ in range(5)])
 
@@ -62,7 +67,18 @@ def run() -> int:
                               app.farm.plant(plot, "patisson")))
     check("полив грядки", lambda: app.farm.water_plot(plot))
     check("удобрение", lambda: (st.give("fertilizer", 1), app.on_secondary()))
-    check("прополка", lambda: (setattr(plot, "weeds", 0.8), app.farm.weed(plot)))
+    def weed_round():
+        """Through on_interact, not Farm.weed: the counter behind the
+        twenty-beds achievement only ticks on the real key press."""
+        plot.weeds = 0.8
+        st.tool_index = 0                       # hoe
+        app.player.pos.x, app.player.pos.y = plot.x, plot.y - 0.9
+        app.player.pos.z = app.world.height_at(plot.x, plot.y - 0.9)
+        app.player.heading, app.player.pitch = 0.0, -70.0
+        app.on_interact()
+        assert plot.weeds < 0.05, "грядка осталась заросшей"
+        assert st.weeded >= 1, "прополка не засчиталась в достижение"
+    check("прополка", weed_round)
     check("лечение гнили", lambda: (setattr(plot, "blight", 0.5),
                                     st.give("ash", 1), app.farm.cure(plot)))
     check("сбор урожая", lambda: (setattr(plot, "progress", 1.0),
@@ -415,7 +431,7 @@ def run() -> int:
                 "achievements": sorted(st.achievements),
                 "cooked": dict(st.cooked),
                 "fish_log": {k: list(v) for k, v in st.fish_log.items()},
-                "total_earned": st.total_earned,
+                "total_earned": st.total_earned, "weeded": st.weeded,
                 "best_fish": list(st.best_fish) if st.best_fish else None,
                 "quests": [(q.key, q.progress, q.done) for q in st.quests],
                 "plots": [(p.crop, round(p.progress, 4), round(p.water, 4),
@@ -573,6 +589,26 @@ def run() -> int:
     check("автосохранение", app.autosave)
     check("загрузка", app.on_load)
     check("выход в меню", app.open_main_menu)
+
+    def no_stowaway_fields():
+        """No field may appear on the game state that __init__ never declared.
+
+        A field created by `st.something = ...` from across the codebase is
+        invisible to to_dict, so it is not saved, and the player loses it on
+        every load. That is exactly what happened to the count of weeded beds:
+        twenty are needed for an achievement and the tally reset every time
+        the game was loaded.
+        """
+        appeared = sorted(set(vars(st)) - declared_fields)
+        assert not appeared, (
+            f"поля появились в обход __init__: {appeared}. "
+            "Объявите их в GameState и сохраните в to_dict/from_dict")
+        # And everything that counts progress has to survive a round trip.
+        saved = set(st.to_dict())
+        for field in ("weeded", "total_earned", "cooked", "fish_log",
+                      "achievements", "play_time"):
+            assert field in saved, f"{field} не попадает в сохранение"
+    check("состояние без безбилетников", no_stowaway_fields)
 
     failures = [c for c in CHECKS if not c[1]]
     for name, ok, detail in CHECKS:

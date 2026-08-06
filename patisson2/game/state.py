@@ -316,6 +316,8 @@ class GameState:
         self.sound = None
         # recipe key -> times cooked, for quests and achievements
         self.cooked: dict[str, int] = {}
+        # Plots weeded, all game. The "twenty beds" achievement counts these.
+        self.weeded = 0
         # species key -> (count, total kilos), for value and the journal
         self.fish_log: dict[str, list] = {}
         self.total_earned = 0
@@ -510,6 +512,7 @@ class GameState:
             "achievements": sorted(self.achievements),
             "play_time": self.play_time,
             "cooked": self.cooked,
+            "weeded": self.weeded,
             "fish_log": self.fish_log,
             "total_earned": self.total_earned,
             "best_fish": list(self.best_fish) if self.best_fish else None,
@@ -547,6 +550,7 @@ class GameState:
         self.play_time = as_float(data.get("play_time"))
         self.cooked = {str(k): as_int(v)
                        for k, v in as_dict(data.get("cooked")).items()}
+        self.weeded = as_int(data.get("weeded"))
         self.fish_log = {}
         for key, entry in as_dict(data.get("fish_log")).items():
             entry = as_list(entry)
