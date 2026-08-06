@@ -452,5 +452,12 @@ class Flutterer:
         y = self.home[1] + math.sin(t * 1.3) * self.r2
         z = self.world.height_at(x, y) + 0.85 + math.sin(t * 3.1) * 0.35
         self.node.setPos(x, y, z)
-        self.node.setH(math.degrees(-t) * 30 % 360)
+        # Face where the path is going. The heading used to be spun on its
+        # own axis, thirty degrees per path-second regardless of travel —
+        # the player saw butterflies pirouetting in place. The model's nose
+        # points +X, so the heading is just the velocity's polar angle.
+        dx = (-math.sin(t) * self.r1 - math.sin(t * 2.3) * 1.38) * self.speed
+        dy = math.cos(t * 1.3) * 1.3 * self.r2 * self.speed
+        if dx * dx + dy * dy > 1e-8:
+            self.node.setH(math.degrees(math.atan2(dy, dx)))
         self.node.setR(math.sin(t * 9.0) * 28.0)

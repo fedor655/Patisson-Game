@@ -1235,6 +1235,42 @@ def run() -> int:
             f"птица — чистый синус: {frac:.2f} энергии в одной линии"
     check("у птиц есть голос", birds_have_a_throat)
 
+    def butterflies_fly_forward():
+        """A butterfly's nose must point where it is flying.
+
+        The heading was spun at thirty degrees per path-second regardless
+        of travel — butterflies pirouetted in place, which the player saw
+        at once. Drive the real flutterers and compare each one's heading
+        against the direction it actually moved between frames.
+        """
+        import math as m
+
+        from ..world.props import Flutterer
+
+        flut = [a for a in app.props.animals if isinstance(a, Flutterer)]
+        assert flut, "в мире нет бабочек"
+        bad = 0.0
+        samples = 0
+        for f in flut[:3]:
+            prev = None
+            for i in range(60):
+                f.update(1 / 30.0, 100.0 + i / 30.0)
+                pos = f.node.getPos()
+                if prev is not None:
+                    dx, dy = pos.x - prev.x, pos.y - prev.y
+                    if dx * dx + dy * dy < 1e-6:
+                        continue
+                    want = m.degrees(m.atan2(dy, dx))
+                    got = f.node.getH()
+                    err = abs((got - want + 180.0) % 360.0 - 180.0)
+                    bad = max(bad, err)
+                    samples += 1
+                prev = pos
+        assert samples > 50, "бабочки не летали — проверка бессмысленна"
+        assert bad < 35.0, \
+            f"бабочка летит боком: расхождение носа и курса до {bad:.0f}°"
+    check("бабочки летят вперёд", butterflies_fly_forward)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
