@@ -1180,6 +1180,36 @@ def run() -> int:
             f"кроны качаются в одной фазе (разброс {spread:.4f})"
     check("деревья качаются вразнобой", trees_sway_out_of_step)
 
+    def wind_is_not_surf():
+        """The wind bed must wander, not roll in like waves on a beach.
+
+        The gust envelope used to be two pure sines (0.07 and 0.031 Hz)
+        at almost 70 % depth over a deep rumble — a swell every twelve
+        seconds, and the player heard the sea. Measured on the rendered
+        waveform: modulation depth (envelope std over mean) and the
+        strongest single peak of the envelope spectrum below 0.25 Hz.
+        Old wind: depth 0.69, peak strength 0.47. New: 0.14 and 0.06.
+        """
+        import numpy as np
+
+        from ..audio.bank import amb_wind
+        from ..audio.synth import SR
+
+        w = amb_wind()
+        env = np.abs(w).astype(np.float64)
+        k = int(SR * 0.05)
+        env = np.convolve(env, np.ones(k) / k, mode="valid")[::k]
+        depth = float(env.std() / env.mean())
+        spec = np.abs(np.fft.rfft(env - env.mean()))
+        freqs = np.fft.rfftfreq(len(env), 0.05)
+        band = (freqs > 0.015) & (freqs < 0.25)
+        peak = float(spec[band].max() / len(env) / env.mean())
+        assert depth < 0.35, \
+            f"ветер дышит как прибой: глубина модуляции {depth:.2f}"
+        assert peak < 0.2, \
+            f"в огибающей ветра метроном волны (пик {peak:.2f})"
+    check("ветер не прибой", wind_is_not_surf)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

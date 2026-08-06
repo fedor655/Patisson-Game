@@ -289,12 +289,27 @@ def sfx_thunder() -> np.ndarray:
 
 
 def amb_wind(duration: float = 14.0) -> np.ndarray:
-    base = lowpass_fast(noise(duration, 101), 520)
-    t = time_axis(duration)
-    gust = (0.55 + 0.45 * np.sin(2 * np.pi * 0.07 * t)
-            + 0.25 * np.sin(2 * np.pi * 0.031 * t + 1.2)).astype(np.float32)
-    hiss = bandpass(noise(duration, 102), 900, 4200) * 0.16
-    out = mix(base * gust, hiss * gust, gains=(0.8, 1.0))
+    """A steady bed of moving air, not surf.
+
+    The gust envelope used to be two pure sines (0.07 and 0.031 Hz) at
+    almost 70 % depth over a 520 Hz rumble — a swell rolling in every
+    twelve seconds, which is the signature of waves on a beach, and the
+    player heard exactly that. Real wind wanders: the envelope is now
+    slow smoothed noise at a fraction of the depth, gusts brighten the
+    hiss more than they raise the rumble, and the bed sits a little
+    higher so it reads as air in leaves rather than water on sand.
+    """
+    base = lowpass_fast(noise(duration, 101), 640)
+    # Irregular slow wander instead of a metronomic swell.
+    slow = lowpass_fast(noise(duration, 103), 0.35)
+    slow = slow / (float(np.abs(slow).max()) + 1e-9)
+    # A touch of faster flutter so held air feels alive.
+    flutter = lowpass_fast(noise(duration, 104), 2.5)
+    flutter = flutter / (float(np.abs(flutter).max()) + 1e-9)
+    gust = (1.0 + 0.17 * slow + 0.06 * flutter).astype(np.float32)
+    hiss = bandpass(noise(duration, 102), 800, 4600) * 0.22
+    # Gusts sharpen the hiss (squared) more than the low bed (linear).
+    out = mix(base * gust, hiss * gust * gust, gains=(0.62, 1.0))
     return normalize(loopable(out, 1.6), 0.42)
 
 
@@ -559,4 +574,4 @@ MUSIC = {
 ALL = {**SFX, **AMBIENCE, **MUSIC}
 
 # Bumping this regenerates the cache on the next launch.
-BANK_VERSION = 2
+BANK_VERSION = 3
