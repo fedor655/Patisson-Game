@@ -1410,6 +1410,20 @@ def run() -> int:
             "тема про удобрение срабатывает без повода"
     check("трюк с удобрением объяснён", fertiliser_trick_is_taught)
 
+    def dressing_is_solid():
+        """Crates, barrels and the bucket must push the player out.
+
+        The cauldron got its blocker when prompts were audited; the loose
+        dressing around the yard was left behind, and the player walked
+        straight through every crate and barrel.
+        """
+        for x, y, name in app.props.DRESSING:
+            gz = app.world.height_at(x, y)
+            nx, ny = app.world.blockers.resolve(x, y, 0.05, gz)
+            assert (nx - x) ** 2 + (ny - y) ** 2 > 1e-8, \
+                f"{name} в ({x:.1f}, {y:.1f}) проходим насквозь"
+    check("ящики и бочки твёрдые", dressing_is_solid)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

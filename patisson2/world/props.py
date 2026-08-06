@@ -89,6 +89,12 @@ class Props:
     # Static dressing is baked per grid cell of this size, in metres.
     BATCH_TILE = 40.0
 
+    # Loose props around the yard; shared with the smoke test that proves
+    # each of them is solid.
+    DRESSING = ((14.0, -8.6, "crate"), (13.2, -7.6, "crate"),
+                (-16.5, -12.0, "barrel"), (-15.6, -12.4, "barrel"),
+                (8.6, 6.2, "bucket"), (-11.6, -3.4, "crate"))
+
     def _batch_static(self):
         """Bake the static dressing into one node per spatial tile.
 
@@ -161,12 +167,19 @@ class Props:
         # of it, and the map put a marker where nothing stopped you.
         cx, cy, _ch = LAYOUT["cooking_pot"]
         self.world.blockers.add_post(cx, cy, 0.55, top=1.0)
-        # A few crates and barrels for dressing.
-        for x, y, name in ((14.0, -8.6, "crate"), (13.2, -7.6, "crate"),
-                           (-16.5, -12.0, "barrel"), (-15.6, -12.4, "barrel"),
-                           (8.6, 6.2, "bucket"), (-11.6, -3.4, "crate")):
-            place(self.root, name, (x, y, self.ground(x, y)),
-                  self.rng.uniform(0, 360))
+        # A few crates and barrels for dressing. They are solid now: the
+        # player walked straight through all of them (the cauldron got its
+        # blocker first, these were left behind). One RNG draw per prop,
+        # exactly as before — the heading feeds both the model and its box.
+        for x, y, name in self.DRESSING:
+            h = self.rng.uniform(0, 360)
+            place(self.root, name, (x, y, self.ground(x, y)), h)
+            if name == "crate":
+                self.world.blockers.add_box(x, y, 0.30, 0.30, h, top=0.7)
+            elif name == "barrel":
+                self.world.blockers.add_post(x, y, 0.28, top=0.9)
+            else:                       # bucket
+                self.world.blockers.add_post(x, y, 0.15, top=0.35)
 
     def _place_fences(self):
         """Fence the vegetable garden, leaving a gap to walk through."""
