@@ -1514,6 +1514,127 @@ def run() -> int:
         assert "всё сходится" in out, f"неожиданный вывод: {out[-300:]}"
     check("двое на одной ферме", two_players_share_one_farm)
 
+    def two_hands_on_one_bed():
+        """Двое жмут на одну грядку, и амбар у них общий.
+
+        Списание шло до проверки: сервер брал семечко, а потом спрашивал
+        грядку, свободна ли она. Кто не успел посадить первым, платил из
+        общего амбара за то, чего не произошло — и платил чужими
+        семенами. То же с золой на здоровой грядке и с удобрением на уже
+        удобренной. Правило одно: тратится только то, что сработало.
+
+        Нарушения копятся и предъявляются разом. Это не стиль: правила
+        независимы, и если проверять их по одному, первое же падение
+        скроет остальные — а тогда нельзя показать, что каждое из них
+        вообще что-то ловит.
+        """
+        from ..net.server import FarmServer, Player
+
+        bad = []
+        server = FarmServer(save_path=None)
+        farm, shared = server.world.farm, server.world.state
+        boris, marta = Player(1, "Борис", None), Player(2, "Марта", None)
+        bed = farm.plots[0]
+
+        shared.inventory["seed_wheat"] = 5
+        server.handle_act(boris, {"a": "plant", "plot": 0, "arg": "wheat"})
+        server.handle_act(marta, {"a": "plant", "plot": 0, "arg": "wheat"})
+        if bed.crop != "wheat":
+            bad.append(f"никто не посадил: {bed.crop}")
+        spent = 5 - shared.count("seed_wheat")
+        if spent != 1:
+            bad.append(f"на одну грядку ушло семян: {spent}")
+
+        # Полив от двоих — оба нажатия законны, второй находит её мокрой.
+        bed.water = 0.0
+        server.handle_act(boris, {"a": "water", "plot": 0})
+        first = bed.water
+        server.handle_act(marta, {"a": "water", "plot": 0})
+        if not (first > 0.0 and bed.water >= first):
+            bad.append(f"полив вдвоём потерялся: {first} → {bed.water}")
+
+        shared.inventory["ash"] = 2
+        bed.blight = 0.0
+        server.handle_act(marta, {"a": "cure", "plot": 0})
+        if shared.count("ash") != 2:
+            bad.append("зола ушла на здоровую грядку")
+        shared.inventory["ash"], bed.blight = 2, 0.5
+        server.handle_act(marta, {"a": "cure", "plot": 0})
+        if shared.count("ash") != 1 or bed.blight != 0.0:
+            bad.append(f"гниль {bed.blight}, золы {shared.count('ash')}")
+
+        shared.inventory["fertilizer"] = 2
+        bed.food = 1.0
+        server.handle_act(boris, {"a": "feed", "plot": 0})
+        if shared.count("fertilizer") != 2:
+            bad.append("удобрение ушло на уже сытую грядку")
+        shared.inventory["fertilizer"], bed.food = 2, 0.1
+        server.handle_act(boris, {"a": "feed", "plot": 0})
+        if shared.count("fertilizer") != 1 or bed.food <= 0.1:
+            bad.append(f"еда {bed.food}, удобрений "
+                       f"{shared.count('fertilizer')}")
+
+        # Двое собирают одну спелую грядку — урожай ровно один.
+        bed.crop, bed.progress, bed.health = "patisson", 1.0, 1.0
+        was = shared.count("patisson")
+        server.handle_act(boris, {"a": "harvest", "plot": 0})
+        after_first = shared.count("patisson")
+        server.handle_act(marta, {"a": "harvest", "plot": 0})
+        if after_first <= was:
+            bad.append("первый ничего не собрал")
+        if shared.count("patisson") != after_first:
+            bad.append("грядка отдала урожай дважды")
+
+        # То же правило в одиночной игре, правым кликом.
+        plot = app.farm.plots[0]
+        keep = (plot.crop, plot.progress, plot.blight, plot.food,
+                st.count("fertilizer"), st.count("ash"))
+        try:
+            st.inventory["fertilizer"], st.inventory["ash"] = 3, 3
+            plot.crop, plot.progress = "wheat", 0.3
+            plot.blight, plot.food = 0.0, 1.0
+            face(plot.x, plot.y, back=0.85)
+            app.on_secondary()
+            if st.count("fertilizer") != 3:
+                bad.append("удобрение списано на уже сытую грядку (один игрок)")
+            st.inventory["fertilizer"], plot.food = 3, 0.1
+            app.on_secondary()
+            if st.count("fertilizer") != 2 or plot.food <= 0.1:
+                bad.append(f"не удобрено: еда {plot.food}, "
+                           f"удобрений {st.count('fertilizer')}")
+
+            st.inventory["fertilizer"], st.inventory["ash"] = 3, 3
+            plot.blight, plot.food = 0.5, 0.1
+            app.on_secondary()
+            if plot.blight != 0.0:
+                bad.append("гниль не вылечена золой")
+            if st.count("ash") != 2:
+                bad.append("зола не списана")
+            if st.count("fertilizer") != 3:
+                bad.append("лечение забрало ещё и удобрение — "
+                           "о котором игроку не сказали")
+
+            st.inventory["fertilizer"], plot.blight = 3, 0.5
+            st.inventory.pop("ash", None)
+            app.on_secondary()
+            if st.count("fertilizer") != 3:
+                bad.append("лечение без золы всё равно списало удобрение")
+        finally:
+            plot.crop, plot.progress, plot.blight, plot.food = keep[:4]
+            for key, n in (("fertilizer", keep[4]), ("ash", keep[5])):
+                if n:
+                    st.inventory[key] = n
+                else:
+                    st.inventory.pop(key, None)
+            if plot.crop is None:
+                app.farm._clear_model(plot)
+                plot.stage = -1
+            else:
+                app.farm._refresh_model(plot)
+
+        assert not bad, "; ".join(bad)
+    check("двое на одной грядке", two_hands_on_one_bed)
+
     def joining_a_farm_works_from_the_game(self=None):
         """The game itself must be able to join a farm and show the others.
 
@@ -1686,6 +1807,26 @@ def run() -> int:
             assert server.world.farm.plots[3].water > 0.0, \
                 "ферма не получила просьбу полить"
 
+            # Правый клик — тоже просьба. Он был единственным нажатием,
+            # которое вообще не уходило с машины: удобряло копию чужой
+            # грядки из копии чужого амбара, а следующее сообщение о
+            # состоянии молча стирало и то и другое.
+            far_bed = server.world.farm.plots[3]
+            far_bed.food, bed.food, bed.blight = 0.1, 0.1, 0.0
+            server.world.state.inventory["fertilizer"] = 2
+            st.inventory.pop("fertilizer", None)   # свой амбар тут ни при чём
+            stand(bed.x, bed.y - 0.85)
+            app.on_secondary()
+            for _ in range(120):
+                app.taskMgr.step()
+                if far_bed.food > 0.15:
+                    break
+            assert far_bed.food > 0.15, \
+                f"правый клик не дошёл до фермы (еда {far_bed.food:.2f})"
+            assert server.world.state.count("fertilizer") == 1, \
+                ("ферма не списала удобрение: "
+                 f"{server.world.state.count('fertilizer')}")
+
             # And the local clock is the server's, not ours.
             before = app.cycle.total_time
             for _ in range(30):
@@ -1813,6 +1954,7 @@ def run() -> int:
         app.hud.set_players([])
         assert app.hud.players_text.getText() == "", "список не убирается"
     check("кто ещё на ферме", the_roster_counts_everybody)
+
 
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),

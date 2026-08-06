@@ -1221,22 +1221,39 @@ class PatissonApp(ShowBase):
         plot, _ = self._aim_plot()
         if plot is None or plot.crop is None:
             return
-        if not self.state.take("fertilizer"):
-            self.sound("error", 0.6)
-            self.state.notify("Нет удобрения (купите в лавке)")
+        st = self.state
+        if self.net is not None:
+            # This press used to be the one thing that never left the
+            # machine: on somebody else's farm it fertilised a copy of
+            # their bed out of a copy of their barn, and the next state
+            # message quietly wiped both.
+            index = self.net.plot_index(plot)
+            if index is not None:
+                self.net.act("cure" if plot.sick else "feed", index)
             return
         if plot.sick:
-            if self.state.take("ash"):
-                self.farm.cure(plot)
+            # Ash, and only ash. Curing used to charge a fertiliser as
+            # well — one that was never applied and never mentioned, and
+            # was spent even when there was no ash and nothing happened.
+            if st.count("ash") and self.farm.cure(plot):
+                st.take("ash")
                 self.sound("plant", 0.8)
-                self.state.notify("Гниль вылечена золой")
+                st.notify("Гниль вылечена золой")
             else:
                 self.sound("error", 0.6)
-                self.state.notify("Нужна зола (купите в лавке)")
+                st.notify("Нужна зола (купите в лавке)")
             return
-        self.farm.feed_plot(plot)
+        if not st.count("fertilizer"):
+            self.sound("error", 0.6)
+            st.notify("Нет удобрения (купите в лавке)")
+            return
+        if not self.farm.feed_plot(plot):
+            self.sound("error", 0.6)
+            st.notify("Грядка уже удобрена")
+            return
+        st.take("fertilizer")
         self.sound("plant", 0.7)
-        self.state.notify("Удобрено")
+        st.notify("Удобрено")
 
     def _fishing_input(self):
         st = self.state

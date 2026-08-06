@@ -141,16 +141,23 @@ class FarmServer:
                 farm.water_plot(plot)
             elif action == "weed":
                 farm.weed(plot)
+            # The stock is checked, the bed is asked, and only then is
+            # anything spent. Taking first and acting after cost the farm
+            # an item every time the answer was no -- and on a shared farm
+            # the answer is often no through no fault of the person
+            # clicking: two people plant the same bed in the same tick and
+            # the loser pays a seed for nothing out of everybody's barn.
             elif action == "cure":
-                if st.take("ash"):
-                    farm.cure(plot)
+                if st.count("ash") and farm.cure(plot):
+                    st.take("ash")
             elif action == "feed":
-                if st.take("fertilizer"):
-                    farm.feed_plot(plot)
+                if st.count("fertilizer") and farm.feed_plot(plot):
+                    st.take("fertilizer")
             elif action == "plant":
                 crop = message.get("arg")
-                if crop and st.take(f"seed_{crop}"):
-                    farm.plant(plot, crop)
+                if (crop and st.count(f"seed_{crop}")
+                        and farm.plant(plot, crop)):
+                    st.take(f"seed_{crop}")
             elif action == "harvest":
                 got = farm.harvest(plot, st.upgrades.harvest_bonus)
                 if got:
