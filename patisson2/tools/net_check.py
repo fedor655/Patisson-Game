@@ -155,6 +155,9 @@ async def run() -> int:
         if server.world.cycle.total_time != day_before:
             problems.append("пустая ферма продолжает тикать — вороны "
                             "склюют урожай, пока никого нет")
+
+        # --- and the client the game actually uses agrees too ----------
+        problems.extend(await check_real_client(server, port))
     finally:
         ticker.cancel()
         tcp.close()
@@ -164,8 +167,69 @@ async def run() -> int:
     if problems:
         return 1
     print("сеть: рукопожатие, снимок мира, чужой полив, общий кошелёк, "
-          "обрыв и покой пустой фермы — всё сходится", flush=True)
+          "обрыв, покой пустой фермы и настоящий клиент на своём "
+          "потоке — всё сходится", flush=True)
     return 0
+
+
+async def check_real_client(server, port: int) -> list[str]:
+    """The client the game actually uses: its own thread, its own queues.
+
+    It has to reach the farm, receive the world, hand the beds to a local
+    Farm so the models appear, and send an intent that the server acts on.
+    """
+    from ..net import client as netclient
+    from ..net.world import SharedWorld
+
+    problems: list[str] = []
+    conn = netclient.NetClient("127.0.0.1", port, name="Клиент")
+    # Waiting synchronously here would block the loop the server runs on,
+    # and it would never get round to accepting the connection.
+    for _ in range(400):
+        if conn.status != "connecting":
+            break
+        await asyncio.sleep(0.02)
+    if conn.status != "online":
+        return [f"настоящий клиент не подключился: {conn.status} {conn.error}"]
+
+    # A local farm to paint the server's numbers onto, headless.
+    local = SharedWorld()
+    if conn.snapshot:
+        netclient.apply_state(local.farm, conn.snapshot, local.state,
+                              local.cycle)
+    server.world.farm.plant(server.world.farm.plots[5], "tomato")
+    await asyncio.sleep(0.5)
+    for message in conn.poll():
+        if message.get("t") == "state":
+            netclient.apply_state(local.farm, message, local.state,
+                                  local.cycle)
+    if local.farm.plots[5].crop != "tomato":
+        problems.append(f"клиент не увидел чужую посадку: "
+                        f"{local.farm.plots[5].crop}")
+
+    # The shared barn starts with patissons and carrots and no wheat, and
+    # the server is right to refuse seeds nobody owns -- so buy one first.
+    server.world.state.give("seed_wheat", 1)
+    conn.act("plant", 6, "wheat")
+    await asyncio.sleep(0.5)
+    if server.world.farm.plots[6].crop != "wheat":
+        problems.append("сервер не принял намерение клиента")
+    if server.world.state.inventory.get("seed_wheat"):
+        problems.append("семя посадили, а из амбара оно не списалось")
+
+    coins_before = local.state.coins
+    server.world.state.give("patisson", 1)
+    server.world.state.sell_all()
+    await asyncio.sleep(0.5)
+    for message in conn.poll():
+        if message.get("t") == "state":
+            netclient.apply_state(local.farm, message, local.state,
+                                  local.cycle)
+    if local.state.coins <= coins_before:
+        problems.append(f"кошелёк не доехал до клиента: "
+                        f"{coins_before} -> {local.state.coins}")
+    conn.close()
+    return problems
 
 
 def main() -> int:
