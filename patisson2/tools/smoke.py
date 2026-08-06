@@ -230,6 +230,56 @@ def run() -> int:
         assert app.tutorial.finished, "обучение не считает себя пройденным"
     check("обучение проходится", tutorial_completes)
 
+    def water_alone_grows_a_crop():
+        """A bed that is only watered must ripen; fertiliser only speeds it.
+
+        Food used to gate survival, not just growth. Planting gives 0.3 food
+        against a decay of 0.85 a day, so a bed starved after eight hours:
+        watered faithfully and never fertilised, every crop withered to nothing
+        and none of them ever ripened — while the warning blamed the water. The
+        first quest is "grow and harvest one patisson", and fertiliser is sold
+        as plant food, not as life support.
+        """
+        from ..game.farming import CROPS, CROP_ORDER
+
+        day = app.cfg.game.day_length
+        bed = app.farm.plots[0]
+
+        def raise_crop(key, fertilise):
+            bed.crop, bed.progress = None, 0.0
+            bed.water, bed.food, bed.health = 0.0, 0.0, 1.0
+            bed.weeds, bed.blight, bed.tilled = 0.0, 0.0, True
+            app.farm.plant(bed, key)
+            season = CROPS[key].seasons[0] if CROPS[key].seasons else 0
+            step = day / 240.0
+            for i in range(240 * 10):
+                app.farm.update(step, season, False)
+                if bed.crop is None:
+                    return None, 0.0
+                if bed.water < 0.5:
+                    app.farm.water_plot(bed)
+                if bed.weeds >= 0.05:
+                    app.farm.weed(bed)
+                if fertilise and bed.food < 0.15:
+                    app.farm.feed_plot(bed)
+                if bed.progress >= 1.0:
+                    return i / 240.0, bed.health
+            return None, bed.health
+
+        for key in CROP_ORDER:
+            days, health = raise_crop(key, False)
+            assert days is not None, \
+                f"{CROPS[key].name}: не созрело за 10 дней на одном поливе"
+            assert health > 0.5, \
+                f"{CROPS[key].name}: созрело полумёртвым ({health:.2f})"
+
+        # And feeding it has to be worth doing.
+        plain, _ = raise_crop("patisson", False)
+        fed, _ = raise_crop("patisson", True)
+        assert fed < plain, \
+            f"удобрение не ускоряет рост: {plain:.1f} -> {fed:.1f} дн."
+    check("вода растит и без удобрения", water_alone_grows_a_crop)
+
     def scarecrow_guards_the_garden():
         """A working scarecrow must cover every bed, and a broken one none.
 

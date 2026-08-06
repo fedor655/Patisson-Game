@@ -254,14 +254,22 @@ class Farm:
                     plot._blight_warned = True
                     events.append(f"{crop.name} поразила гниль — нужна зола.")
 
-            healthy = plot.water > 0.04 and plot.food > 0.02
+            # Water keeps a plant alive; food only decides how fast it grows.
+            # Food used to gate survival as well, and since planting gives 0.3
+            # against a decay of 0.85 a day, every bed starved after eight
+            # hours: watered faithfully and never fertilised, every crop
+            # withered to nothing and none of them ever ripened. Fertiliser is
+            # sold as "питание для растения", not as life support.
+            healthy = plot.water > 0.04
             if healthy and not plot.sick:
                 plot.health = min(1.0, plot.health + day_frac * 1.2)
                 rate = 1.0 / crop.grow_days
                 if season not in crop.seasons:
                     rate *= 0.28      # out of season: slow, not impossible
                 rate *= 0.75 + 0.25 * plot.water
-                rate *= 0.80 + 0.20 * plot.food
+                # Starved: a little over half speed. Fed: full speed and the
+                # extra fruit at harvest.
+                rate *= 0.55 + 0.45 * plot.food
                 if plot.weeds >= WEED_SLOW:
                     rate *= 1.0 - 0.55 * (plot.weeds - WEED_SLOW) / (1.0 - WEED_SLOW)
                 plot.progress = min(1.0, plot.progress + day_frac * rate)
