@@ -124,7 +124,7 @@ class MainMenu:
         self._button(1, "  Продолжить", self.app.menu_continue, enabled=has_save)
         self._button(2, "  Загрузить…", lambda: self._build_saves(),
                      enabled=has_save)
-        self._button(3, "  Играть по сети", self.app.menu_join_server)
+        self._button(3, "  Играть по сети", lambda: self._build_network())
         self._button(4, "  Настройки", self.app.toggle_options)
         self._button(5, "  Достижения", lambda: self._build_achievements())
         self._button(6, "  Выход", self.app.userExit)
@@ -145,6 +145,64 @@ class MainMenu:
                                                      self._build_root()))
         self.info.setText("Автосохранение пишется каждые две минуты,\n"
                           "на рассвете и при выходе в меню.")
+
+    def _build_network(self):
+        """Where to connect, typed in the game rather than in a JSON file.
+
+        The address used to live only in settings.json, which meant the
+        one feature that needs a stranger's address could not be used
+        without a text editor. It is still saved there — the field just
+        stops being the only way in.
+        """
+        from direct.gui.DirectGui import DirectEntry
+
+        self.app.sound("click", 0.5)
+        self.pane = "network"
+        self._clear_buttons()
+        settings = self.app.settings
+
+        def entry(index, label, key, default, width=18):
+            self._label(index, label)
+            field = DirectEntry(
+                parent=self.root, initialText=str(settings.get(key, default)),
+                scale=0.052, width=width, numLines=1, focus=0,
+                frameColor=(0.10, 0.12, 0.11, 0.92), text_fg=INK,
+                text_font=self.font,
+                pos=(-0.62, 0, self._row_z(index) - 0.016),
+                command=lambda _t: self._join())
+            self.buttons.append(field)
+            return field
+
+        self.host_field = entry(0, "  Адрес фермы", "server", "127.0.0.1:7777")
+        self.name_field = entry(1, "  Ваше имя", "player_name", "Фермер", 12)
+        self._button(2, "  Подключиться", self._join)
+        self._button(3, "  Назад", lambda: (self.app.sound("click", 0.5),
+                                            self._build_root()))
+        self.info.setText("Адрес вида 31.76.72.214:7777 или просто 127.0.0.1.\n"
+                          "Всё, что растёт на ферме, растёт у всех сразу.")
+
+    def _row_z(self, index: int) -> float:
+        """Where a row sits, matching the buttons the panes already draw."""
+        return 0.20 - index * 0.135
+
+    def _label(self, index: int, text: str):
+        tag = OnscreenText(text=text, parent=self.root, scale=0.048,
+                           fg=DIM, font=self.font, align=TextNode.ALeft,
+                           pos=(-1.32, self._row_z(index) - 0.014),
+                           mayChange=False)
+        self.buttons.append(tag)
+        return tag
+
+    def _join(self):
+        """Remember what was typed, then go."""
+        host = self.host_field.get().strip()
+        name = self.name_field.get().strip() or "Фермер"
+        if not host:
+            self.info.setText("Введите адрес фермы.")
+            return
+        self.app.settings["server"] = host
+        self.app.settings["player_name"] = name
+        self.app.menu_join_server()
 
     def _build_settings(self):
         self.app.sound("click", 0.5)

@@ -1645,6 +1645,52 @@ def run() -> int:
         assert "тонкий" in out, f"неожиданный вывод: {out[-200:]}"
     check("клиент для телефона тонкий", phone_client_stays_thin)
 
+    def network_address_is_typed_in_the_game():
+        """Адрес фермы вводится в игре, а не в текстовом редакторе.
+
+        Пункт «Играть по сети» сначала вёл прямо на подключение по строке
+        из settings.json — то есть единственная возможность, которой нужен
+        чужой адрес, была недоступна без правки файла. Проверяется всё,
+        что делает поле полем: оно появляется, показывает сохранённое,
+        принимает набранное и именно набранное уходит в подключение.
+        """
+        keep = (app.settings.get("server"), app.settings.get("player_name"))
+        tried = {}
+        real_join = app.menu_join_server
+        app.menu_join_server = lambda: tried.setdefault(
+            "address", app.settings.get("server"))
+        try:
+            app.settings["server"] = "10.0.0.9:7000"
+            app.menu._build_network()
+            app.taskMgr.step()
+            assert app.menu.pane == "network", "экран сети не открылся"
+            assert app.menu.host_field.get() == "10.0.0.9:7000", \
+                f"в поле не сохранённый адрес: {app.menu.host_field.get()}"
+
+            app.menu.host_field.enterText("31.76.72.214:7777")
+            app.menu.name_field.enterText("Гость")
+            app.menu._join()
+            assert tried.get("address") == "31.76.72.214:7777", \
+                f"подключались не по набранному адресу: {tried}"
+            assert app.settings["player_name"] == "Гость", \
+                "имя игрока не сохранилось"
+
+            # Пустой адрес — это не повод молча никуда не пойти.
+            tried.clear()
+            app.menu.host_field.enterText("   ")
+            app.menu._join()
+            assert not tried, "с пустым адресом всё равно полезли подключаться"
+            assert "адрес" in app.menu.info.getText().lower(), \
+                f"про пустой адрес ничего не сказано: {app.menu.info.getText()}"
+
+            app.menu._build_root()
+            assert app.menu.pane == "root"
+        finally:
+            app.menu_join_server = real_join
+            app.settings["server"], app.settings["player_name"] = keep
+            app.menu._build_root()
+    check("адрес фермы вводится в меню", network_address_is_typed_in_the_game)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
