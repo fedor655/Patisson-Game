@@ -284,6 +284,13 @@ class HUD:
             left.append(f"      растёт {plain:.1f} дн. · "
                         f"с удобрением {fed:.1f}")
             left.append("")
+        # The one trick the game never told: feed once, right before the
+        # harvest. The threshold is quoted from the same constant harvest()
+        # reads, so the page cannot drift from the rule.
+        from ..game.farming import BONUS_FOOD
+        left.append("Мешок удобрения перед самым сбором")
+        left.append(f"даёт лишний плод (сытость выше "
+                    f"{int(BONUS_FOOD * 100)}%).")
         right = ["РЫБА", ""]
         for sp in SPECIES:
             if sp.key == "boot":

@@ -34,6 +34,7 @@ class Talk:
     coins: int = 0
     crows: int = 0
     ripe: int = 0
+    hungry_ripe: int = 0               # nearly ripe beds short of the bonus
     weedy: int = 0
     sick: int = 0
     planted: int = 0
@@ -108,6 +109,20 @@ TOPICS = [
                    "Полол бы ты чаще — и мне товару больше."],
         "pyotr": ["Сорняк — он терпеливый. Дождётся, пока ты устанешь.",
                   "Прополи. Руками, руками, инструмент тут не нужен."],
+    }),
+    # The one trick nothing else in the game explained: a single sack of
+    # fertiliser just before picking buys the bonus fruit, while feeding a
+    # bed all season costs more than the fruit returns.
+    Topic("fertilise", 12.0, _t(lambda t: t.hungry_ripe > 0), {
+        "bogdan": ["Мешок удобрения перед самым сбором — и грядка даст "
+                   "лишний плод. А сыпать всю дорогу — деньги на ветер.",
+                   "Подкорми перед сбором, не раньше: сытая грядка при "
+                   "сборе даёт плод сверху."],
+        "marina": ["Удобряй под самый сбор — выйдет лишний плод. Мне же "
+                   "больше продашь.",
+                   "Кто кормит грядку к сбору, приносит на прилавок больше."],
+        "pyotr": ["Моё дело скотина, но и я знаю: корми грядку к сбору, "
+                  "а не когда попало."],
     }),
     Topic("ripe", 14.0, _t(lambda t: t.ripe > 0), {
         "bogdan": ["Поспело у тебя. Чего стоишь?",

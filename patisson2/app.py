@@ -22,7 +22,7 @@ from .config import Config
 from .engine.pipeline import RenderPipeline
 from .game.cooking import POT_POSITION, Kitchen, item_name
 from .game.dialogue import Talk
-from .game.farming import CROPS, CROP_ORDER, Farm
+from .game.farming import BONUS_FOOD, CROPS, CROP_ORDER, Farm
 from .game.fishing import BITE, REELING, Fishing
 from .game.livestock import FEED_ITEM, SPECIES, Livestock
 from .game.npc import Villagers
@@ -1384,6 +1384,9 @@ class PatissonApp(ShowBase):
             coins=st.coins,
             crows=sum(1 for c in self.pests.crows if c.phase != "leaving"),
             ripe=sum(1 for p in plots if p.ripe),
+            hungry_ripe=sum(1 for p in plots
+                            if p.crop is not None and p.progress > 0.7
+                            and p.food < BONUS_FOOD),
             weedy=sum(1 for p in plots if p.weedy),
             sick=sum(1 for p in plots if p.sick),
             planted=sum(1 for p in plots if p.crop is not None),

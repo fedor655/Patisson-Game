@@ -1383,6 +1383,33 @@ def run() -> int:
         assert all(quest.reward > 0 for quest in q.values())
     check("награды заданий соразмерны", quest_rewards_are_worth_it)
 
+    def fertiliser_trick_is_taught():
+        """The winning fertiliser play must be written somewhere a player
+        reads.
+
+        One sack just before picking buys the bonus fruit for 6 coins;
+        feeding a bed all season loses money. Nothing in the game said
+        either. Now the almanac states the rule with the threshold quoted
+        from the same constant harvest() reads, and the villagers bring it
+        up when a nearly ripe bed is short of the bonus.
+        """
+        from ..game.dialogue import TOPICS, Talk
+        from ..game.farming import BONUS_FOOD
+
+        lines = app.hud._journal_almanac()[0]
+        want = f"{int(BONUS_FOOD * 100)}%"
+        assert any("удобрения перед самым сбором" in ln.lower()
+                   for ln in lines), "в альманахе нет правила про удобрение"
+        assert any(want in ln for ln in lines), \
+            f"альманах не называет порог сытости {want}"
+        topic = next((t for t in TOPICS if t.name == "fertilise"), None)
+        assert topic is not None, "жители не рассказывают про удобрение"
+        assert topic.applies(Talk(hungry_ripe=1)), \
+            "тема про удобрение не срабатывает на голодной спелой грядке"
+        assert not topic.applies(Talk(hungry_ripe=0)), \
+            "тема про удобрение срабатывает без повода"
+    check("трюк с удобрением объяснён", fertiliser_trick_is_taught)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

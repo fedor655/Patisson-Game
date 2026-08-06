@@ -82,6 +82,13 @@ WATER_DECAY = 1.35          # per day, before the crop's own thirst
 TEND_WATER_AT = 0.5         # a diligent player tops the can up here
 TEND_FOOD_AT = 0.6          # ... and keeps the bonus fruit within reach
 
+# One sack of fertiliser just before picking buys the bonus fruit: the
+# extra is granted when the bed is this healthy and this well fed at the
+# moment of harvest. Topping the bed up all season loses money — the
+# almanac and Богдан both say so, quoting these numbers.
+BONUS_HEALTH = 0.92
+BONUS_FOOD = 0.6
+
 
 def growth_rate(crop: Crop, water: float, food: float, weeds: float,
                 in_season: bool) -> float:
@@ -272,7 +279,7 @@ class Farm:
         if not plot.ripe:
             return None
         crop = CROPS[plot.crop]
-        bonus = 1 if plot.health > 0.92 and plot.food > 0.6 else 0
+        bonus = 1 if plot.health > BONUS_HEALTH and plot.food > BONUS_FOOD else 0
         count = crop.yield_count + bonus + basket_bonus
         self.harvest_log[crop.key] = self.harvest_log.get(crop.key, 0) + count
         plot.crop = None
