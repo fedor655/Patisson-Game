@@ -552,9 +552,17 @@ def make_well():
     bucket = revolve([(0.16, 0), (0.19, 0.24)], 12, WOOD_DARK)
     bucket.extend(cylinder(0.185, 0.03, IRON, 12).translate(0, 0, 0.21))
     metal.extend(bucket.translate(0, 0, 0.80))
+    # Standing water just under the kerb. The shaft used to be open to the
+    # terrain, so looking in showed lawn growing at the bottom of the
+    # "well" — the player noticed immediately. A still dark disc with a
+    # glossy surface reads as deep water without cutting a hole in the
+    # ground.
+    water = Mesh()
+    water.extend(cylinder(0.67, 0.025, srgb(20, 38, 44), 22).translate(0, 0, 0.34))
     return [Part(stone, "stone", roughness=0.93),
             Part(wood, "wood", roughness=0.88),
-            Part(metal, "metal", roughness=0.45, metallic=0.65)]
+            Part(metal, "metal", roughness=0.45, metallic=0.65),
+            Part(water, "water", roughness=0.07)]
 
 
 def make_market_stall():

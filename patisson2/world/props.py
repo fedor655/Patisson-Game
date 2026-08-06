@@ -152,6 +152,9 @@ class Props:
         # Solid dressing.
         wx, wy, _wh = LAYOUT["well"]
         self.world.blockers.add_post(wx, wy, 0.95, top=1.2)
+        # No grass inside the kerb: the water disc sits at 0.34 m and the
+        # taller blades poked straight through it.
+        self.world.mask.paint(wx, wy, 0.95, 2, falloff=False)
         sx, sy, sh = LAYOUT["market_stall"]
         self.world.blockers.add_box(sx, sy, 1.25, 0.55, sh, top=1.3)
         # The cauldron had no blocker at all: you could stand in the middle

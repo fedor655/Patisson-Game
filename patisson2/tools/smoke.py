@@ -1052,6 +1052,53 @@ def run() -> int:
             f"газон уехал вместе с центром: средний сдвиг яркости {moved:.2f}"
     check("трава стоит на месте", grass_stays_planted)
 
+    def well_holds_water():
+        """Looking into the well must show water, not a lawn.
+
+        The kerb was an open ring over ordinary terrain, so the "well" had
+        grass growing at the bottom — the player looked in on day one. The
+        model now carries a still dark water disc under the kerb and the
+        grass mask is painted out inside the ring. Verified by rendering:
+        the water point is projected into the frame and the pixels around
+        it must not read as green grass.
+        """
+        import os
+        import tempfile
+
+        import numpy as np
+        from panda3d.core import Filename, Point2, Point3
+        from PIL import Image
+
+        from ..world.layout import LAYOUT
+
+        wx, wy, _h = LAYOUT["well"]
+        gz = app.world.height_at(wx, wy)
+        day = app.cfg.game.day_length
+        app.cycle.total_time = app.cycle.day * day + 11.0 / 24.0 * day
+        stand(wx, wy - 1.7, 0.0, -36.0)
+        for _ in range(4):
+            app.taskMgr.step()              # settle camera and exposure
+        rel = app.cam.getRelativePoint(app.render,
+                                       Point3(wx, wy, gz + 0.36))
+        ndc = Point2()
+        assert app.camLens.project(rel, ndc), "вода за пределами кадра"
+        path = os.path.join(tempfile.mkdtemp(prefix="patisson-well-"),
+                            "well.png")
+        app.graphicsEngine.renderFrame()
+        app.graphicsEngine.renderFrame()
+        app.win.saveScreenshot(Filename.fromOsSpecific(path))
+        img = np.asarray(Image.open(path).convert("RGB"), dtype=np.int16)
+        h, w, _c = img.shape
+        px = int((ndc.x + 1.0) * 0.5 * w)
+        py = int((1.0 - ndc.y) * 0.5 * h)
+        win = img[max(py - 5, 0):py + 6, max(px - 5, 0):px + 6]
+        # Grass is green-dominant; still water is dark and blue-leaning.
+        greenness = float((win[..., 1]
+                           - np.maximum(win[..., 0], win[..., 2])).mean())
+        assert greenness < 8.0, \
+            f"в колодце трава, а не вода (зелёность {greenness:.1f})"
+    check("в колодце вода", well_holds_water)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
