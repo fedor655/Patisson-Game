@@ -61,7 +61,7 @@ class Player:
 
 
 class FarmServer:
-    def __init__(self, save_path: Path | None = None):
+    def __init__(self, save_path: Path | None = None, load: bool = True):
         self.world = SharedWorld()
         self.players: dict[int, Player] = {}
         self._next_id = 1
@@ -70,6 +70,12 @@ class FarmServer:
         self._last_save = time.monotonic()
         self._last_plots: list[dict] = []
         self._pending: list[str] = []
+        # People leave crops in the ground and expect to find them there
+        # next week. Writing the world without reading it back would hand
+        # everyone a fresh farm on every restart — worse than not saving
+        # at all, because it looks like it worked.
+        if load and save_path is not None:
+            self.load()
 
     # ------------------------------------------------------------ the world
 
@@ -248,6 +254,24 @@ class FarmServer:
                     self._pending.clear()
                 if time.monotonic() - self._last_save > SAVE_EVERY:
                     self.save()
+
+    def load(self) -> bool:
+        """Read the shared world back, or start a new farm."""
+        try:
+            raw = self.save_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return False
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            print(f"[!] сохранённый мир не читается ({exc}) — начинаю новый",
+                  flush=True)
+            return False
+        self.world.from_dict(data)
+        self._last_plots = []          # everyone gets a full snapshot
+        print(f"мир загружен: день {self.world.cycle.day + 1}, "
+              f"{self.world.state.coins} мон.", flush=True)
+        return True
 
     def save(self) -> None:
         self._last_save = time.monotonic()

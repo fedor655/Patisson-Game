@@ -160,8 +160,31 @@ class SharedWorld:
         return {
             "day": self.cycle.day,
             "time": self.cycle.total_time,
-            "weather": self.weather,
+            "weather": self.weather_state.to_dict(),
             "state": self.state.to_dict(),
             "farm": self.farm.to_dict(),
             "pests": self.pests.to_dict(),
         }
+
+    def from_dict(self, data: dict) -> None:
+        """Put a saved farm back the way it was.
+
+        A hosted world outlives the process holding it: people leave crops
+        in the ground and expect to find them there next week. Writing the
+        world to disk without ever reading it back means every restart
+        quietly hands everyone a fresh farm — which is worse than not
+        saving at all, because it looks like it worked.
+
+        Anything unreadable is skipped rather than fatal: a server that
+        refuses to start because one field went bad is a server nobody can
+        get back into.
+        """
+        from ..game.state import as_dict, as_float
+
+        data = as_dict(data)
+        self.cycle.total_time = as_float(data.get("time"),
+                                         self.cycle.total_time)
+        self.weather_state.from_dict(data.get("weather"))
+        self.state.from_dict(as_dict(data.get("state")))
+        self.farm.from_dict(as_dict(data.get("farm")))
+        self.pests.from_dict(as_dict(data.get("pests")))

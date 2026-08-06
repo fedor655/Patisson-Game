@@ -159,6 +159,8 @@ async def run() -> int:
         # --- and the client the game actually uses agrees too ----------
         problems.extend(await check_real_client(server, port))
         problems.extend(await check_phone(server, port))
+        problems.extend(check_restart())
+        problems.extend(await check_rubbish(port))
     finally:
         ticker.cancel()
         tcp.close()
@@ -168,8 +170,9 @@ async def run() -> int:
     if problems:
         return 1
     print("сеть: рукопожатие, снимок мира, чужой полив, общий кошелёк, "
-          "обрыв, покой пустой фермы, клиент игры и телефон — "
-          "всё сходится", flush=True)
+          "обрыв, покой пустой фермы, клиент игры, телефон, "
+          "перезапуск сервера и мусор в сокете — всё сходится",
+          flush=True)
     return 0
 
 
@@ -277,6 +280,80 @@ async def check_phone(server, port: int) -> list[str]:
     if phone.clock.get("season") is None:
         problems.append("на телефон не пришли часы фермы")
     phone.close()
+    return problems
+
+def check_restart() -> list[str]:
+    """A hosted farm has to outlive the process holding it.
+
+    People leave crops in the ground and expect to find them there next
+    week. The server wrote the world to disk from the start but never
+    read it back, so every restart quietly handed everyone a fresh farm —
+    which is worse than not saving at all, because it looks like it
+    worked.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from ..net.server import FarmServer
+
+    problems: list[str] = []
+    save = Path(tempfile.mkdtemp(prefix="patisson-world-")) / "world.json"
+    before = FarmServer(save_path=save)
+    before.world.farm.plant(before.world.farm.plots[3], "pumpkin")
+    before.world.farm.plots[3].progress = 0.7
+    before.world.state.coins = 777
+    before.world.state.give("patisson", 4)
+    before.world.cycle.total_time = before.world.cfg.game.day_length * 5.25
+    before.world.pests.scarecrow.condition = 0.42
+    before.save()
+
+    after = FarmServer(save_path=save)
+    bed = after.world.farm.plots[3]
+    if bed.crop != "pumpkin" or abs(bed.progress - 0.7) > 0.01:
+        problems.append(f"после перезапуска грядка стала {bed.crop} "
+                        f"{bed.progress:.2f} вместо pumpkin 0.70")
+    if after.world.state.coins != 777:
+        problems.append(f"после перезапуска {after.world.state.coins} монет "
+                        f"вместо 777")
+    if after.world.state.inventory.get("patisson") != 4:
+        problems.append("после перезапуска пропал урожай из амбара")
+    if after.world.cycle.day != 5:
+        problems.append(f"после перезапуска день {after.world.cycle.day + 1} "
+                        f"вместо 6")
+    if abs(after.world.pests.scarecrow.condition - 0.42) > 0.01:
+        problems.append("после перезапуска пугало снова как новое")
+    return problems
+
+
+async def check_rubbish(port: int) -> list[str]:
+    """Somebody will point something that is not the game at this port.
+
+    None of it may take the farm down with it, and a real player must
+    still be able to join afterwards.
+    """
+    problems: list[str] = []
+    rubbish = [
+        ("случайные байты", bytes([0, 1, 2, 3]) + b"hello"),
+        ("огромный размер", (10 ** 7).to_bytes(4, "big") + b"x" * 10),
+        ("не JSON", (5).to_bytes(4, "big") + b"{{{{{"),
+        ("не объект", (3).to_bytes(4, "big") + b"[1]"),
+        ("обрыв на середине", (100).to_bytes(4, "big") + b"abc"),
+    ]
+    for name, payload in rubbish:
+        try:
+            _r, w = await asyncio.open_connection("127.0.0.1", port)
+            w.write(payload)
+            await w.drain()
+            await asyncio.sleep(0.15)
+            w.close()
+        except OSError as exc:
+            problems.append(f"сервер отказал на «{name}»: {exc}")
+            return problems
+    guest = Client("После мусора")
+    answer = await guest.connect(port)
+    if answer.get("t") != "welcome":
+        problems.append(f"после мусора живой игрок не зашёл: {answer}")
+    await guest.close()
     return problems
 
 def main() -> int:
