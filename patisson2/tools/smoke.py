@@ -34,7 +34,7 @@ def check(name: str, fn) -> None:
 
 def run() -> int:
     from ..app import PatissonApp, configure
-    from ..game.fishing import BITE, REELING
+    from ..game.fishing import BITE, REELING, WAITING
 
     cfg = Config()
     cfg.graphics.width, cfg.graphics.height = 640, 360
@@ -229,6 +229,111 @@ def run() -> int:
                 f"обучение застряло на «{step.title}» ({step.event})"
         assert app.tutorial.finished, "обучение не считает себя пройденным"
     check("обучение проходится", tutorial_completes)
+
+    def tiers_do_what_the_shop_says():
+        """Each tier is sold with a sentence. Hold the game to it.
+
+        The shop promises three beds in a row, then 3×3; 18 water then 34 and
+        the neighbours too; a fruit more, then another and a quarter on the
+        price; a faster bite, a wider strike window, a slower marker and more
+        rare fish. Every one of those is a number some other code has to read,
+        and nothing was checking that it still did.
+        """
+        import statistics
+        from ..world.layout import PLOT_SPACING
+        from ..world.props import plot_positions
+
+        keep = (st.upgrades.hoe, st.upgrades.can,
+                st.upgrades.rod, st.upgrades.basket)
+        try:
+            # --- hoe: beds broken by one press ---------------------------
+            for tier, want in ((1, 1), (2, 3), (3, 9)):
+                st.upgrades.hoe = tier
+                for p in list(app.farm.plots):
+                    app.farm._clear_model(p)
+                app.farm.plots.clear()
+                st.tool_index = 0
+                stand(20.0 + tier * 6.0, 20.0)
+                app.on_interact()
+                assert len(app.farm.plots) == want, \
+                    f"мотыга т{tier}: вскопано {len(app.farm.plots)}, ждали {want}"
+            for p in list(app.farm.plots):
+                app.farm._clear_model(p)
+            app.farm.plots.clear()
+            for x, y in plot_positions():
+                app.farm.add_plot(x, y)
+
+            # --- can: capacity, and whether neighbours get wet -----------
+            for tier, want in ((1, 8), (2, 18), (3, 34)):
+                st.upgrades.can = tier
+                assert st.upgrades.can_capacity == want, \
+                    f"лейка т{tier}: ёмкость {st.upgrades.can_capacity}"
+            target = app.farm.plots[7]
+            near = [p for p in app.farm.plots if p is not target
+                    and abs(p.x - target.x) <= PLOT_SPACING + 0.1
+                    and abs(p.y - target.y) <= PLOT_SPACING + 0.1]
+            assert near, "у грядки не нашлось соседей — проверка бессмысленна"
+            for tier, neighbours_wet in ((1, False), (3, True)):
+                st.upgrades.can = tier
+                for p in app.farm.plots:
+                    p.crop, p.water = "patisson", 0.0
+                st.water, st.tool_index = 30.0, 1
+                stand(target.x, target.y - 0.9)
+                app.on_interact()
+                assert target.water > 0.0, f"лейка т{tier}: цель не полита"
+                wet = any(p.water > 0.0 for p in near)
+                assert wet == neighbours_wet, \
+                    f"лейка т{tier}: соседи политы={wet}, ждали {neighbours_wet}"
+
+            # --- basket: fruit per bed, and the sale multiplier ----------
+            for tier, want in ((1, 1), (2, 2), (3, 3)):
+                st.upgrades.basket = tier
+                plot0 = app.farm.plots[0]
+                plot0.crop, plot0.progress, plot0.health = "patisson", 1.0, 1.0
+                plot0.food = 0.0                 # no "well fed" bonus
+                got = app.farm.harvest(plot0, st.upgrades.harvest_bonus)
+                assert got and got[1] == want, \
+                    f"корзина т{tier}: собрано {got and got[1]}, ждали {want}"
+            plain, rich = [], []
+            for tier, bucket in ((1, plain), (3, rich)):
+                st.upgrades.basket = tier
+                st.inventory.clear()
+                st.give("patisson", 4)
+                st.coins = 0
+                st.sell_all()
+                bucket.append(st.coins)
+            assert rich[0] > plain[0], \
+                f"корзина т3 не подняла цену: {plain[0]} -> {rich[0]}"
+
+            # --- rod: the four numbers, and a bite that really comes faster
+            waits = {}
+            for tier in (1, 3):
+                st.upgrades.rod = tier
+                seen = []
+                for _ in range(60):
+                    app.fishing.cast(st.upgrades)
+                    ticks = 0
+                    while app.fishing.state.phase == WAITING and ticks < 4000:
+                        app.fishing.update(1 / 60.0, st.upgrades)
+                        ticks += 1
+                    seen.append(ticks)
+                    app.fishing.cancel()
+                waits[tier] = statistics.median(seen)
+            assert waits[3] < waits[1], \
+                f"удочка т3 клюёт не быстрее: {waits[1]} -> {waits[3]} тиков"
+            prev = None
+            for tier in (1, 2, 3):
+                st.upgrades.rod = tier
+                now = (st.upgrades.bite_speed, -st.upgrades.strike_window,
+                       st.upgrades.reel_ease, -st.upgrades.luck)
+                if prev is not None:
+                    assert all(a > b for a, b in zip(prev, now)), \
+                        f"удочка т{tier} не лучше предыдущей: {prev} -> {now}"
+                prev = now
+        finally:
+            (st.upgrades.hoe, st.upgrades.can,
+             st.upgrades.rod, st.upgrades.basket) = keep
+    check("тиры делают что обещано", tiers_do_what_the_shop_says)
 
     def tables_are_wired():
         """Every entry in every declaration table must be both produced and
