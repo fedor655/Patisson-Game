@@ -230,6 +230,44 @@ def run() -> int:
         assert app.tutorial.finished, "обучение не считает себя пройденным"
     check("обучение проходится", tutorial_completes)
 
+    def schedules_are_walkable():
+        """Villagers must stand somewhere a person could stand, and get there.
+
+        Марина's "рыбачит у пруда" was the pond's centre point, so she spent a
+        sixth of every day on the bottom of it with the water over her head,
+        under a label that says she is beside it.
+        """
+        import math
+        from ..game.npc import SCHEDULES
+        from ..world.layout import indoors_at
+
+        water = app.cfg.world.water_level
+        for key, entries in SCHEDULES.items():
+            for hour, (x, y), what in entries:
+                ground = app.world.height_at(x, y)
+                assert ground >= water, \
+                    f"{key} «{what}»: точка под водой ({ground:.2f} < {water})"
+                assert app.world.terrain.slope_at(x, y) <= 0.55, \
+                    f"{key} «{what}»: точка на круче"
+
+        # And each stop has to be reachable in the time the slot allows.
+        step = 1.0 / 30.0
+        for npc in app.villagers.npcs:
+            entries = SCHEDULES[npc.key]
+            for idx, (hour, (tx, ty), what) in enumerate(entries):
+                start = entries[idx - 1][1]
+                npc.node.setPos(start[0], start[1],
+                                app.world.height_at(*start))
+                for _ in range(int(2.0 / 24.0 * app.cfg.game.day_length / step)):
+                    npc.update(step, hour + 0.01, 0.0, None, "clear")
+                p = npc.node.getPos()
+                gap = math.hypot(p.x - tx, p.y - ty)
+                assert gap < 1.0, \
+                    f"{npc.key} не дошёл до «{what}»: {gap:.2f} м"
+                # Indoors is fine — sleeping and the barn — but note which.
+                indoors_at(p.x, p.y)
+    check("расписания проходимы", schedules_are_walkable)
+
     def tiers_do_what_the_shop_says():
         """Each tier is sold with a sentence. Hold the game to it.
 

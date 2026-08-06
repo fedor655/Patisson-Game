@@ -21,7 +21,10 @@ SCHEDULES = {
     ],
     "marina": [
         (7.0, (-14.1, -2.6), "открывает лавку"),
-        (13.0, (-30.0, 24.0), "рыбачит у пруда"),
+        # The bank, not the middle: this used to be POND_CENTRE, so Марина
+        # spent a sixth of every day standing on the bottom of the pond with
+        # the water over her head, under a label that says she is beside it.
+        (13.0, (-24.0, 18.0), "рыбачит у пруда"),
         (17.0, (-14.1, -2.6), "торгует"),
         (21.0, (-19.0, -16.0), "проверяет амбар"),
     ],
