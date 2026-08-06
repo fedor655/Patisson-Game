@@ -34,3 +34,5 @@ Thumbs.db
 
 # Claude Code workspace
 .claude/
+media/trailer.mp4
+media/_*
