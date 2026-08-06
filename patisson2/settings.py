@@ -23,6 +23,11 @@ DEFAULTS = {
     "music_volume": 0.45,
     "sfx_volume": 0.85,
     "keys": {},
+    # Where "Играть по сети" last connected, so the address survives a
+    # restart. There is no text field in the menu; the address is typed
+    # here or on the command line.
+    "server": "127.0.0.1:7777",
+    "player_name": "Фермер",
 }
 
 # Preset -> the graphics values it implies. Volumes are never touched by these.

@@ -124,9 +124,10 @@ class MainMenu:
         self._button(1, "  Продолжить", self.app.menu_continue, enabled=has_save)
         self._button(2, "  Загрузить…", lambda: self._build_saves(),
                      enabled=has_save)
-        self._button(3, "  Настройки", self.app.toggle_options)
-        self._button(4, "  Достижения", lambda: self._build_achievements())
-        self._button(5, "  Выход", self.app.userExit)
+        self._button(3, "  Играть по сети", self.app.menu_join_server)
+        self._button(4, "  Настройки", self.app.toggle_options)
+        self._button(5, "  Достижения", lambda: self._build_achievements())
+        self._button(6, "  Выход", self.app.userExit)
         self.info.setText("" if has_save else "Сохранения пока нет — начните новую игру.")
         self.footer.setText("Panda3D · всё сгенерировано кодом")
 

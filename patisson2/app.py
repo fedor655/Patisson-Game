@@ -141,6 +141,9 @@ class PatissonApp(ShowBase):
         self.keys = {}
         self.paused = False
         self._options_return = None     # panel to go back to after settings
+        # A visit to somebody else's farm, or None. Wherever the two
+        # modes have to differ, this is the question that gets asked.
+        self.net = None
         self.fishing = Fishing(random.Random(self.cfg.world.seed ^ 0xF15))
         self.photo_mode = False
         self.worldmap = WorldMap(self, self.hud, self.world, self.cfg.world,
@@ -374,8 +377,37 @@ class PatissonApp(ShowBase):
         self.paused = False
         self._grab_mouse(True)
 
+    def menu_join_server(self):
+        """Join the farm named in the settings and let it be the truth.
+
+        The address lives in ~/.patisson2/settings.json rather than behind
+        a text field: typing an IP with the mouse is worse than editing
+        one line, and a field is easy to add later once there is somewhere
+        worth connecting to.
+        """
+        from .net.client import NetClient
+        from .net.protocol import DEFAULT_PORT
+        from .net.session import NetSession, parse_address
+
+        self.sound("click", 0.6)
+        host, port = parse_address(self.settings.get("server", ""),
+                                   DEFAULT_PORT)
+        if not host:
+            self.menu.info.setText("Адрес сервера не задан в настройках.")
+            return
+        self.menu.info.setText(f"Подключаюсь к {host}:{port}…")
+        client = NetClient(host, port,
+                           name=str(self.settings.get("player_name", "Фермер")))
+        self.reset_world()
+        self.net = NetSession(self, client)
+        self.tutorial = Tutorial()
+        self.tutorial.active = False        # somebody else's farm, not a lesson
+        self._enter_world()
+        self.state.notify(f"Ферма {host}:{port} — подключаюсь…", 5.0)
+
     def menu_new_game(self):
         self.sound("click", 0.6)
+        self.net = None
         self.reset_world()
         self.tutorial = Tutorial()
         self._walked = 0.0
@@ -978,8 +1010,46 @@ class PatissonApp(ShowBase):
                 return "", note
         return "", ""
 
+    def _net_interact(self):
+        """Turn whatever the player just pressed into an intent.
+
+        The tool in hand and the bed under the crosshair are all the
+        server needs; it applies its own rules to both. Standing by the
+        scarecrow or the stall means those instead, exactly as offline.
+        """
+        from .game.state import TOOLS
+
+        net = self.net
+        crow = self.pests.scarecrow
+        if (self.player.pos - crow.pos).lengthSquared() < 6.0:
+            net.act("repair")
+            return
+        if self._near_stall():
+            net.act("sell")
+            return
+        plot, _target = self._aim_plot()
+        if plot is None:
+            return
+        index = net.plot_index(plot)
+        if index is None:
+            return
+        tool = TOOLS[self.state.tool_index]
+        if tool == "can":
+            net.act("water", index)
+        elif tool == "hoe":
+            net.act("weed" if plot.weeds >= 0.05 else "cure", index)
+        elif tool == "seeds":
+            net.act("plant", index, CROP_ORDER[self.state.seed_index])
+        elif tool == "basket":
+            net.act("harvest", index)
+
     def on_interact(self):
         if self.mode == "menu" or self.paused or self.hud.panel_mode:
+            return
+        if self.net is not None:
+            # On somebody else's farm this is a request, not a result:
+            # the server decides whether the bed was actually watered.
+            self._net_interact()
             return
         if self.hud.dialogue:
             self.hud.hide_dialogue()
@@ -1263,7 +1333,11 @@ class PatissonApp(ShowBase):
         blocked = (in_menu or self.paused or self.worldmap.visible
                    or self.options.visible
                    or self.hud.panel_mode is not None)
-        if not blocked:
+        if self.net is not None:
+            self.net.update(dt)
+        if not blocked and self.net is None:
+            # On somebody else's farm the world is simulated there.
+            # Running it here too would give two answers to one question.
             self.cycle.advance(dt)
             self._update_weather(dt)
             self._update_fishing(dt)

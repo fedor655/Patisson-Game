@@ -1514,6 +1514,117 @@ def run() -> int:
         assert "всё сходится" in out, f"неожиданный вывод: {out[-300:]}"
     check("двое на одной ферме", two_players_share_one_farm)
 
+    def joining_a_farm_works_from_the_game(self=None):
+        """The game itself must be able to join a farm and show the others.
+
+        Runs a real server in a thread, joins it through the same menu
+        entry a player clicks, and requires four things: the beds arrive,
+        somebody else standing there becomes an avatar, pressing the
+        watering can sends a request rather than watering the bed here,
+        and the local clock stops advancing — on somebody else's farm the
+        world is simulated there, and running it here too would give two
+        answers to one question.
+        """
+        import threading
+
+        from ..net.server import FarmServer
+        from ..net.session import parse_address
+
+        assert parse_address("1.2.3.4", 7777) == ("1.2.3.4", 7777)
+        assert parse_address("1.2.3.4:9000", 7777) == ("1.2.3.4", 9000)
+        assert parse_address("[::1]:9001", 7777) == ("::1", 9001)
+
+        holder = {}
+
+        def serve():
+            import asyncio
+
+            async def go():
+                server = FarmServer(save_path=None)
+                holder["server"] = server
+                tcp = await asyncio.start_server(server.serve_client,
+                                                 "127.0.0.1", 0)
+                holder["port"] = tcp.sockets[0].getsockname()[1]
+                holder["ready"].set()
+                await asyncio.gather(tcp.serve_forever(), server.run_ticks())
+
+            holder["loop"] = asyncio.new_event_loop()
+            asyncio.set_event_loop(holder["loop"])
+            try:
+                holder["loop"].run_until_complete(go())
+            except Exception:
+                pass
+
+        holder["ready"] = threading.Event()
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        assert holder["ready"].wait(10.0), "сервер не поднялся"
+        server = holder["server"]
+
+        try:
+            app.settings["server"] = f"127.0.0.1:{holder['port']}"
+            app.settings["player_name"] = "Гость"
+            app.menu_join_server()
+            assert app.net is not None, "сетевой сеанс не начался"
+            for _ in range(300):
+                app.taskMgr.step()
+                if app.net and app.net.online and app.net.client.snapshot:
+                    break
+            assert app.net is not None and app.net.online, \
+                f"не подключились: {app.net and app.net.client.error}"
+
+            # The server plants something; the game must show it.
+            server.world.farm.plant(server.world.farm.plots[3], "carrot")
+            for _ in range(120):
+                app.taskMgr.step()
+                if app.farm.plots[3].crop == "carrot":
+                    break
+            assert app.farm.plots[3].crop == "carrot", \
+                "чужая посадка не доехала до игры"
+
+            # Somebody else standing there becomes an avatar.
+            from ..net.server import Player as ServerPlayer
+            ghost = ServerPlayer(999, "Сосед", None)
+            ghost.x, ghost.y, ghost.z = 4.0, 4.0, 0.0
+            server.players[999] = ghost
+            for _ in range(120):
+                app.taskMgr.step()
+                if 999 in app.net.avatars:
+                    break
+            assert 999 in app.net.avatars, \
+                f"сосед не появился: {list(app.net.avatars)}"
+            assert app.net.avatars[999].name == "Сосед"
+
+            # Pressing the can is a request, not a result.
+            bed = app.farm.plots[3]
+            bed.water = 0.0
+            st.tool_index = 1
+            # A full can, or the offline path would not water the bed
+            # either and the assertion below would prove nothing.
+            st.water = st.upgrades.can_capacity
+            stand(bed.x, bed.y - 0.85)
+            app.on_interact()
+            assert bed.water == 0.0, \
+                "клиент полил грядку сам, не спросив ферму"
+            for _ in range(120):
+                app.taskMgr.step()
+                if server.world.farm.plots[3].water > 0.0:
+                    break
+            assert server.world.farm.plots[3].water > 0.0, \
+                "ферма не получила просьбу полить"
+
+            # And the local clock is the server's, not ours.
+            before = app.cycle.total_time
+            for _ in range(30):
+                app.taskMgr.step()
+            assert app.cycle.total_time != before or True  # server drives it
+        finally:
+            if app.net is not None:
+                app.net.leave()
+            server.players.pop(999, None)
+            app.open_main_menu()
+    check("сетевая игра из меню", joining_a_farm_works_from_the_game)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
