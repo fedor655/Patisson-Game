@@ -189,19 +189,34 @@ class OptionsScreen:
         self.visible = False
         self.root.hide()
 
-    def _layout(self, scale: float, top: float, note_y: float) -> None:
+    def _layout(self, scale: float, top: float) -> None:
         """Both pages share the widgets, so re-lay them out on every switch."""
         for node, x, align in ((self.body, -0.72, None), (self.values, 0.62, None)):
             node.setScale(scale)
             node.setPos(x, top)
-        self.note.setPos(-0.72, note_y)
+
+    def _drop_note(self, gap: float = 0.07) -> None:
+        """Hang the note under the menu's measured bottom, not at a magic y.
+
+        It used to sit at a hardcoded -0.14 while the menu's tenth row,
+        at Segoe's real line height, reached -0.22: the resolution and
+        gamepad lines printed straight across «Управление… Enter» —
+        "немного текст пересекается", said the player. Call after the
+        body text is set, because the measurement needs the rows.
+        """
+        tn = self.body.textNode
+        scale = self.body.getScale()[0]
+        top = self.body.getPos()[1]
+        bottom = (top - (tn.getNumRows() - 1) * tn.getLineHeight() * scale
+                  - 0.35 * scale)
+        self.note.setPos(-0.72, bottom - gap)
 
     def refresh(self) -> None:
         if self.page == "keys":
             self._refresh_keys()
             return
         self.title.setText("Настройки")
-        self._layout(scale=0.052, top=0.50, note_y=-0.14)
+        self._layout(scale=0.052, top=0.50)
         pad = self.base.gamepad
         self.note.setText(
             "Разрешение задаётся при запуске:  python -m patisson2 --fullscreen"
@@ -215,11 +230,12 @@ class OptionsScreen:
             values.append(value)
         self.body.setText("\n".join(labels))
         self.values.setText("\n".join(values))
+        self._drop_note()
 
     def _refresh_keys(self) -> None:
         self.title.setText("Управление")
         # Eighteen rows will not fit at the main page's size; shrink and lift.
-        self._layout(scale=0.040, top=0.58, note_y=-0.53)
+        self._layout(scale=0.040, top=0.58)
         self.note.setText(
             "Геймпад настраивать не нужно: раскладка стандартная.\n"
             "Стики — ходьба и обзор, A — прыжок, B — действие, X — удобрить.")
@@ -233,3 +249,4 @@ class OptionsScreen:
                           self.rebindable()[i] == self.capturing) else value)
         self.body.setText("\n".join(labels))
         self.values.setText("\n".join(values))
+        self._drop_note()

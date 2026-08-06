@@ -1295,6 +1295,36 @@ def run() -> int:
         app.farm.clear(p)
     check("грядки из земли, не из краски", beds_are_geometry)
 
+    def options_note_below_menu():
+        """The footnote must hang below the menu, not print across it.
+
+        The note sat at a hardcoded y=-0.14 while the tenth menu row, at
+        the font's real line height, reached -0.22 — the resolution and
+        gamepad lines ran straight across «Управление… Enter» on the
+        player's screen. Measure both pages by glyphs.
+        """
+        app.toggle_options()
+        try:
+            for page in ("main", "keys"):
+                if page == "keys":
+                    app.options.page = "keys"
+                app.options.refresh()
+                body = app.options.body
+                tn = body.textNode
+                scale = body.getScale()[0]
+                bottom = (body.getPos()[1]
+                          - (tn.getNumRows() - 1) * tn.getLineHeight() * scale
+                          - 0.35 * scale)
+                note_top = (app.options.note.getPos()[1]
+                            + 0.80 * app.options.note.getScale()[0])
+                assert note_top < bottom, \
+                    f"стр. {page}: подпись ({note_top:.3f}) налезает на " \
+                    f"меню (низ {bottom:.3f})"
+        finally:
+            app.options.page = "main"
+            app.toggle_options()
+    check("подпись настроек не налезает", options_note_below_menu)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
