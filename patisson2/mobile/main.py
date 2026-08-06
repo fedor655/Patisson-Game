@@ -25,7 +25,10 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
-from .link import DEFAULT_PORT, FarmLink
+try:                                    # inside the game's package
+    from .link import DEFAULT_PORT, FarmLink
+except ImportError:                     # packaged flat for a phone
+    from link import DEFAULT_PORT, FarmLink
 
 # Tool -> what tapping a bed means, and what the button says.
 TOOLS = [

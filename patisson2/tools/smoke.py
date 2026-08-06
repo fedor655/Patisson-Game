@@ -1625,6 +1625,26 @@ def run() -> int:
             app.open_main_menu()
     check("сетевая игра из меню", joining_a_farm_works_from_the_game)
 
+    def phone_client_stays_thin():
+        """Телефонный клиент не должен потянуть за собой игру.
+
+        В APK едут два файла. Стоит кому-нибудь добавить туда движок,
+        numpy или импорт из patisson2 — сборка сломается, и узнается это
+        через час на CI, а не здесь. Импорты читаются разбором кода:
+        искать эти слова текстом нельзя, они честно упоминаются в
+        комментариях, которые объясняют, почему их там нет.
+        """
+        import subprocess
+
+        root = Path(__file__).resolve().parents[2]
+        done = subprocess.run(
+            [sys.executable, "-X", "utf8", str(root / "android" / "check_thin.py")],
+            cwd=str(root), capture_output=True, text=True, timeout=120)
+        out = (done.stdout or "") + (done.stderr or "")
+        assert done.returncode == 0, f"клиент растолстел:\n{out.strip()[-400:]}"
+        assert "тонкий" in out, f"неожиданный вывод: {out[-200:]}"
+    check("клиент для телефона тонкий", phone_client_stays_thin)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

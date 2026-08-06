@@ -1,0 +1,69 @@
+name: Сборка APK
+
+# Телефонный клиент собирается здесь, а не на сервере игрока: на его VPS
+# живут почта, VPN, сайт и сервер Minecraft, и там свободно чуть больше
+# 300 МБ памяти. python-for-android скачивает Android SDK и NDK на много
+# гигабайт и компилирует Python под ARM — на такой машине это почти
+# наверняка убило бы чужие службы. Здесь сборка ничем не рискует.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [patisson-2.0]
+    paths:
+      - "patisson2/mobile/**"
+      - "android/**"
+      - ".github/workflows/apk.yml"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Собрать папку приложения
+        run: |
+          set -eux
+          mkdir -p build/app
+          # Только эти два файла и нужны: связь и отрисовка. Они кладутся
+          # рядом, поэтому main.py находит link.py плоским импортом.
+          cp patisson2/mobile/link.py build/app/link.py
+          cp patisson2/mobile/main.py build/app/main.py
+          cp android/buildozer.spec build/app/buildozer.spec
+          cp android/icon.png build/app/icon.png
+          ls -la build/app
+
+      - name: Проверить, что клиент не тянет движок
+        run: |
+          set -eux
+          cd build/app
+          # Импорты читаются разбором кода, а не поиском по тексту:
+          # panda3d и numpy честно упоминаются в комментариях, которые
+          # объясняют, почему их здесь нет.
+          python "$GITHUB_WORKSPACE/android/check_thin.py" .
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Поставить buildozer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config zlib1g-dev libncurses-dev \
+            cmake libffi-dev libssl-dev
+          python -m pip install --upgrade pip
+          python -m pip install buildozer cython==0.29.36
+
+      - name: Собрать APK
+        working-directory: build/app
+        run: buildozer -v android debug
+
+      - name: Забрать APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: patisson-android
+          path: build/app/bin/*.apk
+          if-no-files-found: error
