@@ -642,6 +642,11 @@ class PatissonApp(ShowBase):
             self.hud.open_panel("shop")
             self.paused = True
             self._grab_mouse(False)
+            # Step nine of the tutorial is "look into the shop", and nothing
+            # ever told it that you had: the tutorial stopped dead at 8/10,
+            # the map step after it was unreachable, and the sign-off never
+            # arrived.
+            self.teach("shop")
 
     def toggle_journal(self):
         if self.mode == "menu":

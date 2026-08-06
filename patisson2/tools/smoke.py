@@ -202,6 +202,55 @@ def run() -> int:
          lambda: app.hud.dialogue is not None)
     app.hud.hide_dialogue()
 
+    def tutorial_completes():
+        """Every step must be reachable by playing.
+
+        The ninth step, "look into the shop", had nothing emitting its event,
+        so the tutorial stopped at 8/10 for good: the tenth step was
+        unreachable, the panel never went away, and the sign-off never came.
+        """
+        from ..game.tutorial import STEPS
+
+        emitted = set()
+        source = Path(__file__).resolve().parents[1] / "app.py"
+        text = source.read_text(encoding="utf-8")
+        for step in STEPS:
+            if f'teach("{step.event}")' in text:
+                emitted.add(step.event)
+        missing = [s.event for s in STEPS if s.event not in emitted]
+        assert not missing, f"шагам обучения нечем сработать: {missing}"
+
+        # And drive it: every step, in order, must advance.
+        app.tutorial.index, app.tutorial.active = 0, True
+        for step in STEPS:
+            before = app.tutorial.index
+            app.teach(step.event)
+            assert app.tutorial.index == before + 1, \
+                f"обучение застряло на «{step.title}» ({step.event})"
+        assert app.tutorial.finished, "обучение не считает себя пройденным"
+    check("обучение проходится", tutorial_completes)
+
+    def tier_is_visible():
+        """The tool bar must say which tier you are holding.
+
+        Buying the 520-coin hoe changed nothing on the bar the hoe sits in.
+        """
+        from ..game.state import TOOLS
+        keep = st.upgrades.hoe
+        try:
+            st.upgrades.hoe = 1
+            app.hud.update(app.cycle, st, "Ясно")
+            plain = app.hud.tool_labels[TOOLS.index("hoe")].getText()
+            st.upgrades.hoe = 3
+            app.hud.update(app.cycle, st, "Ясно")
+            upgraded = app.hud.tool_labels[TOOLS.index("hoe")].getText()
+        finally:
+            st.upgrades.hoe = keep
+        assert upgraded != plain, f"тир не виден на панели: {plain!r} = {upgraded!r}"
+        for ch in upgraded:
+            assert ch.isprintable(), f"непечатаемый знак в подписи: {upgraded!r}"
+    check("тир инструмента виден", tier_is_visible)
+
     def sleep_setup():
         bed = app.props.bed_pos
         stand(bed[0], bed[1], 0.0, 0.0)

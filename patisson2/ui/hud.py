@@ -568,6 +568,14 @@ class HUD:
                 crop = CROPS[state.seed_key]
                 have = state.count(f"seed_{state.seed_key}")
                 label = f"{crop.name} x{have}"
+            else:
+                # Which tier you are holding. Buying a 520-coin hoe changed
+                # nothing you could see on the bar it sits in. Roman numerals
+                # rather than stars: the fallback fonts do not all carry the
+                # dingbats, and a missing glyph draws an empty box.
+                tier = getattr(state.upgrades, key, 1)
+                if tier > 1:
+                    label += " " + ("II" if tier == 2 else "III")
             self._set(self.tool_labels[i], f"{i+1} {label}")
 
         # Assigning to a DirectGui item calls configure(), which rebuilds the
