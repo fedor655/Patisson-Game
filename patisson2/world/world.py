@@ -160,7 +160,8 @@ class World:
         self.water_bounds = bounds
 
     def _build_grass(self):
-        node = build_blade_node(self.graphics.grass_density)
+        from .grass import TILE_OVERDRAW
+        node = build_blade_node(int(self.graphics.grass_density * TILE_OVERDRAW))
         node.reparentTo(self.root)
         node.setShader(make_shader("grass.vert", "grass.frag", {"NUM_LIGHTS": 1 + 4}))
         node.setShaderInput("u_skyLut", self.pipeline.skylut_tex)

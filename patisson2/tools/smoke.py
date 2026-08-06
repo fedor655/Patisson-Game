@@ -1006,6 +1006,52 @@ def run() -> int:
             "после возврата из паузы управление не вернулось"
     check("настройки не запирают игру", options_release_controls)
 
+    def grass_stays_planted():
+        """Moving the grass centre must not drag the lawn along with it.
+
+        Every blade's base was u_center plus a per-instance offset, so the
+        whole field — all 170 thousand instances — was welded to the camera:
+        walk two metres and every blade slid two metres across the ground.
+        It was the first thing the player noticed. Blades now live on a
+        fixed world-space lattice and only the window around the player
+        moves. Render the same fixed camera twice, with the grass centre two
+        metres apart, and require the near field to stay put.
+        """
+        import os
+        import tempfile
+
+        import numpy as np
+        from panda3d.core import Filename, Vec3, Vec4
+        from PIL import Image
+
+        stand(30.0, 30.0, heading=0.0, pitch=-22.0)
+        app.taskMgr.step()                  # settle the camera and uniforms
+        grass = app.world.grass_np
+        grass.setShaderInput("u_time", 12.0)
+        grass.setShaderInput("u_wind", Vec4(0.7, 0.7, 0.0, 0.4))
+        out = tempfile.mkdtemp(prefix="patisson-grass-")
+        frames = []
+        for i, cx in enumerate((30.0, 32.0)):
+            grass.setShaderInput("u_center", Vec3(cx, 30.0, 0.0).xy)
+            app.graphicsEngine.renderFrame()
+            app.graphicsEngine.renderFrame()
+            path = os.path.join(out, f"grass{i}.png")
+            app.win.saveScreenshot(Filename.fromOsSpecific(path))
+            frames.append(np.asarray(Image.open(path).convert("L"),
+                                     dtype=np.int16))
+        h, w = frames[0].shape
+        # The lower half of the frame is lawn a few metres ahead, well inside
+        # the fade ring at the window's edge. Mean difference, not a count of
+        # big jumps: the check can run at dawn, where blades are dim and few
+        # pixels clear a big threshold even when the whole field slides —
+        # measured 0.03 (static) against 7.4 (sliding), a ×250 separation.
+        near = slice(int(h * 0.55), int(h * 0.95)), slice(int(w * 0.1),
+                                                          int(w * 0.9))
+        moved = float(np.abs(frames[0][near] - frames[1][near]).mean())
+        assert moved < 1.5, \
+            f"газон уехал вместе с центром: средний сдвиг яркости {moved:.2f}"
+    check("трава стоит на месте", grass_stays_planted)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))

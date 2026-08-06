@@ -40,10 +40,15 @@ void main() {
     vec3 r = hash33(vec3(id * 0.0013, id * 0.0007 + 3.1, id * 0.0021 + 7.7));
     vec3 r2 = hash33(vec3(id * 0.0029 + 11.0, id * 0.0017 + 5.0, id * 0.0011 + 2.0));
 
-    // Even-ish disc distribution around the player.
-    float ang = r.x * TAU;
-    float rad = sqrt(r.y) * u_radius;
-    vec2 base = u_center + vec2(cos(ang), sin(ang)) * rad;
+    // Every instance owns one fixed spot in a world-space tile of side
+    // 2*radius, repeated across the map; we draw the repetition nearest the
+    // player. The base used to be u_center plus a per-instance offset -- the
+    // whole field was welded to the camera and every blade slid across the
+    // ground with each step, which was the first thing the player noticed.
+    vec2 offset = (r.xy * 2.0 - 1.0) * u_radius;
+    float tile = 2.0 * u_radius;
+    vec2 base = offset + tile * floor((u_center - offset) / tile + 0.5);
+    float rad = distance(base, u_center);
 
     float h = terrainHeight(base);
 
@@ -59,7 +64,8 @@ void main() {
     // Patchiness so the lawn isn't uniform.
     float density = fbm2(base * 0.09, 3);
 
-    bool cull = h < u_waterLevel + 0.12
+    bool cull = rad > u_radius
+             || h < u_waterLevel + 0.12
              || groundN.z < 0.74
              || mask.r > 0.25
              || mask.g > 0.55

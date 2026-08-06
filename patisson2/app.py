@@ -477,7 +477,9 @@ class PatissonApp(ShowBase):
         pipe.composite.setShaderInput(
             "u_godrayStrength", g.godray_strength if g.godrays else 0.0)
 
-        count = max(1000, int(Config().graphics.grass_density * float(d["grass_scale"])))
+        from .world.grass import TILE_OVERDRAW
+        count = max(1000, int(Config().graphics.grass_density
+                              * float(d["grass_scale"]) * TILE_OVERDRAW))
         if getattr(self, "world", None) is not None:
             self.world.grass_np.setInstanceCount(count)
 

@@ -3,6 +3,8 @@ all placement decided on the GPU from the instance id."""
 
 from __future__ import annotations
 
+import math
+
 from panda3d.core import (
     Geom,
     GeomNode,
@@ -13,6 +15,12 @@ from panda3d.core import (
     NodePath,
     OmniBoundingVolume,
 )
+
+# Blades live on a fixed world-space lattice: each instance owns a spot in a
+# square tile of side 2*radius, and only the inscribed disc around the player
+# is ever visible. The corners are wasted, so build enough instances to keep
+# the configured on-screen density: square area over disc area = 4/pi.
+TILE_OVERDRAW = 4.0 / math.pi
 
 # (across, along) pairs forming a tapering blade as one triangle strip.
 BLADE = [
