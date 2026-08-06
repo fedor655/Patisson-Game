@@ -58,6 +58,60 @@ CROPS: dict[str, Crop] = {
 
 CROP_ORDER = ("patisson", "carrot", "tomato", "wheat", "pumpkin")
 
+# What one action gives a bed, and what a bed loses on its own.
+WATER_AMOUNT = 0.55         # one pour from the can
+FEED_AMOUNT = 0.6           # one sack of fertiliser
+PLANT_WATER = 0.35          # a seed goes into damp ground
+PLANT_FOOD = 0.3
+FOOD_DECAY = 0.85           # per in-game day
+WATER_DECAY = 1.35          # per day, before the crop's own thirst
+TEND_WATER_AT = 0.5         # a diligent player tops the can up here
+TEND_FOOD_AT = 0.6          # ... and keeps the bonus fruit within reach
+
+
+def growth_rate(crop: Crop, water: float, food: float, weeds: float,
+                in_season: bool) -> float:
+    """Progress per in-game day for a bed in this condition.
+
+    One source of truth, because two places need this number: the
+    simulation that grows the crop, and the almanac that tells the player
+    how long it will take.
+    """
+    rate = 1.0 / crop.grow_days
+    if not in_season:
+        rate *= 0.28          # out of season: slow, not impossible
+    rate *= 0.75 + 0.25 * water
+    # Starved: a little over half speed. Fed: full speed and the extra
+    # fruit at harvest.
+    rate *= 0.55 + 0.45 * food
+    if weeds >= WEED_SLOW:
+        rate *= 1.0 - 0.55 * (weeds - WEED_SLOW) / (1.0 - WEED_SLOW)
+    return rate
+
+
+def days_to_ripe(crop: Crop, *, fertilised: bool = False,
+                 in_season: bool = True) -> float:
+    """In-game days from seed to ripe for a player who tends the bed.
+
+    Integrated from `growth_rate` rather than read off `crop.grow_days`.
+    That field is the rate parameter, not a time anybody can observe: it
+    is only reached by a bed held at full food and full water, so the
+    almanac's "растёт 2 дн." described a patisson nobody has ever grown —
+    a watered but unfertilised one takes 4.8.
+    """
+    water, food = PLANT_WATER, PLANT_FOOD
+    progress, days, step = 0.0, 0.0, 1.0 / 240.0
+    while progress < 1.0 and days < 90.0:
+        progress += step * growth_rate(crop, water, food, 0.0, in_season)
+        days += step
+        water = max(0.0, water - step * WATER_DECAY * crop.thirst)
+        food = max(0.0, food - step * FOOD_DECAY)
+        if water < TEND_WATER_AT:
+            water = min(1.0, water + WATER_AMOUNT)
+        if fertilised and food < TEND_FOOD_AT:
+            food = min(1.0, food + FEED_AMOUNT)
+    return days
+
 
 @dataclass
 class Plot:
@@ -143,14 +197,14 @@ class Farm:
         plot.crop = crop_key
         plot.progress = 0.0
         plot.health = 1.0
-        plot.water = max(plot.water, 0.35)
-        plot.food = max(plot.food, 0.3)
+        plot.water = max(plot.water, PLANT_WATER)
+        plot.food = max(plot.food, PLANT_FOOD)
         plot.stage = -1
         plot._wither_warned = False
         self._refresh_model(plot)
         return True
 
-    def water_plot(self, plot: Plot, amount: float = 0.55) -> bool:
+    def water_plot(self, plot: Plot, amount: float = WATER_AMOUNT) -> bool:
         if plot.crop is None:
             return False
         if plot.water >= 0.98:
@@ -158,7 +212,7 @@ class Farm:
         plot.water = min(1.0, plot.water + amount)
         return True
 
-    def feed_plot(self, plot: Plot, amount: float = 0.6) -> bool:
+    def feed_plot(self, plot: Plot, amount: float = FEED_AMOUNT) -> bool:
         if plot.crop is None or plot.food >= 0.98:
             return False
         plot.food = min(1.0, plot.food + amount)
@@ -236,11 +290,11 @@ class Farm:
                 weed_rate *= 0.25            # little grows in winter
             plot.weeds = min(1.0, plot.weeds + day_frac * weed_rate)
 
-            thirst = 1.35 * crop.thirst
+            thirst = WATER_DECAY * crop.thirst
             if plot.weeds >= WEED_THIRST:
                 thirst *= 1.7                # the weeds are drinking it too
             plot.water = max(0.0, plot.water - day_frac * thirst)
-            plot.food = max(0.0, plot.food - day_frac * 0.85)
+            plot.food = max(0.0, plot.food - day_frac * FOOD_DECAY)
 
             # Blight takes hold in sodden beds, and spreads once it has.
             if plot.blight <= 0.0:
@@ -263,15 +317,8 @@ class Farm:
             healthy = plot.water > 0.04
             if healthy and not plot.sick:
                 plot.health = min(1.0, plot.health + day_frac * 1.2)
-                rate = 1.0 / crop.grow_days
-                if season not in crop.seasons:
-                    rate *= 0.28      # out of season: slow, not impossible
-                rate *= 0.75 + 0.25 * plot.water
-                # Starved: a little over half speed. Fed: full speed and the
-                # extra fruit at harvest.
-                rate *= 0.55 + 0.45 * plot.food
-                if plot.weeds >= WEED_SLOW:
-                    rate *= 1.0 - 0.55 * (plot.weeds - WEED_SLOW) / (1.0 - WEED_SLOW)
+                rate = growth_rate(crop, plot.water, plot.food, plot.weeds,
+                                   season in crop.seasons)
                 plot.progress = min(1.0, plot.progress + day_frac * rate)
             else:
                 plot.health = max(0.0, plot.health - day_frac * 1.6)

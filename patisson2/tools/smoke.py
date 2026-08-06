@@ -280,6 +280,70 @@ def run() -> int:
             f"удобрение не ускоряет рост: {plain:.1f} -> {fed:.1f} дн."
     check("вода растит и без удобрения", water_alone_grows_a_crop)
 
+    def almanac_days_are_real():
+        """Every срок in the almanac has to be one the player can actually get.
+
+        The page used to print crop.grow_days, which is the rate parameter of
+        the growth integrator and not a duration — a bed only reaches it while
+        held at full water and full food. So the almanac promised a patisson
+        in "2 дн." while a watered one takes 4.8 and a fed one 2.9. Both
+        numbers are now integrated from the same growth maths the farm runs,
+        and this check raises a real bed to prove it.
+        """
+        from ..game.farming import (CROPS, CROP_ORDER, TEND_FOOD_AT,
+                                    TEND_WATER_AT)
+
+        lines = app.hud._journal_almanac()[0]
+        day = app.cfg.game.day_length
+        bed = app.farm.plots[0]
+
+        def raise_crop(key, fertilise):
+            bed.crop, bed.progress = None, 0.0
+            bed.water, bed.food, bed.health = 0.0, 0.0, 1.0
+            bed.weeds, bed.blight, bed.tilled = 0.0, 0.0, True
+            app.farm.plant(bed, key)
+            season = CROPS[key].seasons[0] if CROPS[key].seasons else 0
+            step = day / 240.0
+            for i in range(240 * 12):
+                app.farm.update(step, season, False)
+                if bed.crop is None:
+                    return None
+                if bed.progress >= 1.0:
+                    return i / 240.0
+                if bed.water < TEND_WATER_AT:
+                    app.farm.water_plot(bed)
+                if bed.weeds >= 0.05:
+                    app.farm.weed(bed)
+                # Rich damp soil rots, so a fed bed needs the ash the game
+                # tells you to buy. Without this the wheat died every time.
+                if bed.blight >= 0.05:
+                    app.farm.cure(bed)
+                if fertilise and bed.food < TEND_FOOD_AT:
+                    app.farm.feed_plot(bed)
+            return None
+
+        for key in CROP_ORDER:
+            crop = CROPS[key]
+            head = next((i for i, ln in enumerate(lines)
+                         if ln.startswith(f"  {crop.name} ·")), None)
+            assert head is not None, f"в альманахе нет строки про «{crop.name}»"
+            row = lines[head + 2]
+            assert row.lstrip().startswith("растёт "), \
+                f"«{crop.name}»: ожидалась строка со сроком, а не {row!r}"
+            shown = [float(w) for w in row.replace("·", " ").split()
+                     if w.replace(".", "", 1).isdigit()]
+            assert len(shown) == 2, f"«{crop.name}»: не два срока в {row!r}"
+            for label, fertilise, said in (("на поливе", False, shown[0]),
+                                           ("с удобрением", True, shown[1])):
+                real = raise_crop(key, fertilise)
+                assert real is not None, \
+                    f"«{crop.name}» {label}: не созрело за 12 дней"
+                assert abs(real - said) <= 0.35, \
+                    f"«{crop.name}» {label}: альманах обещает {said:.1f} дн., " \
+                    f"грядка вызрела за {real:.1f}"
+        app.farm.clear(bed)
+    check("сроки в альманахе настоящие", almanac_days_are_real)
+
     def scarecrow_guards_the_garden():
         """A working scarecrow must cover every bed, and a broken one none.
 
@@ -744,6 +808,42 @@ def run() -> int:
             app.taskMgr.step()
         app.toggle_journal()
     check("разделы журнала", journal_pages)
+
+    def journal_columns_fit():
+        """Neither column may run into the other or off the panel.
+
+        The journal already overflowed once and had to be split into two
+        columns, and nothing since then stopped a longer line from closing
+        the gap again — the almanac's сроки line just grew. Measure the
+        glyphs on every page rather than counting characters.
+        """
+        from ..ui.hud import JOURNAL_PAGES
+
+        app.toggle_journal()
+        right_edge = app.hud.panel["frameSize"][1]
+        floor = app.hud.panel["frameSize"][2]
+        for page, name in enumerate(JOURNAL_PAGES):
+            app.hud.journal_page = page
+            app.hud.refresh_panel()
+            app.taskMgr.step()
+            cols = []
+            for body in (app.hud.panel_body, app.hud.panel_body2):
+                scale = body.getScale()[0]
+                x, top = body.getPos()[0], body.getPos()[1]   # pos is (x, z)
+                node = body.textNode
+                cols.append((x, x + node.getWidth() * scale,
+                             top - node.getNumRows() * scale * 1.05))
+            assert cols[0][1] < cols[1][0], \
+                f"«{name}»: левая колонка наезжает на правую " \
+                f"({cols[0][1]:.3f} против {cols[1][0]:.3f})"
+            assert cols[1][1] < right_edge, \
+                f"«{name}»: правая колонка вылезает за панель " \
+                f"({cols[1][1]:.3f} против {right_edge:.3f})"
+            for low in (cols[0][2], cols[1][2]):
+                assert low > floor, \
+                    f"«{name}»: текст уходит ниже панели ({low:.3f})"
+        app.toggle_journal()
+    check("колонки журнала не налезают", journal_columns_fit)
 
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),

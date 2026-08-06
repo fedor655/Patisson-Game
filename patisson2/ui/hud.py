@@ -8,7 +8,7 @@ from direct.gui.DirectGui import DirectButton, DirectFrame
 from direct.gui.OnscreenText import OnscreenText
 from panda3d.core import CardMaker, TextNode, TransparencyAttrib
 
-from ..game.farming import CROPS, CROP_ORDER
+from ..game.farming import CROPS, CROP_ORDER, days_to_ripe
 from ..game.state import (ACHIEVEMENTS, TOOL_NAMES, TOOLS, shop_entries)
 
 JOURNAL_PAGES = ("задания", "справочник", "статистика")
@@ -265,9 +265,16 @@ class HUD:
         for key in CROP_ORDER:
             crop = CROPS[key]
             seasons = ", ".join(SEASONS[s] for s in crop.seasons) or "круглый год"
-            left.append(f"  {crop.name} · {crop.sell_price} мон.")
-            left.append(f"      {seasons} · растёт {crop.grow_days:.0f} дн.")
-            left.append(f"      урожай {crop.yield_count} · семена {crop.seed_price} мон.")
+            # Both times are integrated from the growth maths the farm runs,
+            # not read off crop.grow_days: that field is the rate parameter
+            # and is only reached by a bed held at full food.
+            plain = days_to_ripe(crop)
+            fed = days_to_ripe(crop, fertilised=True)
+            left.append(f"  {crop.name} · {crop.sell_price} мон. · "
+                        f"семена {crop.seed_price} мон.")
+            left.append(f"      {seasons} · урожай {crop.yield_count}")
+            left.append(f"      растёт {plain:.1f} дн. · "
+                        f"с удобрением {fed:.1f}")
             left.append("")
         right = ["РЫБА", ""]
         for sp in SPECIES:
