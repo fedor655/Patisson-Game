@@ -132,6 +132,7 @@ class PatissonApp(ShowBase):
 
         self.keys = {}
         self.paused = False
+        self._options_return = None     # panel to go back to after settings
         self.fishing = Fishing(random.Random(self.cfg.world.seed ^ 0xF15))
         self.photo_mode = False
         self.worldmap = WorldMap(self, self.hud, self.world, self.cfg.world,
@@ -490,6 +491,9 @@ class PatissonApp(ShowBase):
             self.close_options()
             return
         self.sound("click", 0.5)
+        # Remember where the player came from: closing the settings has to
+        # put them back there, not into a half-state.
+        self._options_return = self.hud.panel_mode
         self.hud.close_panel()
         self.worldmap.close()
         self.hud.root.hide()
@@ -532,10 +536,23 @@ class PatissonApp(ShowBase):
             user_settings.save(self.settings)
         if self.mode == "menu":
             self.menu.show()
+            return
+        if self.hud.visible:
+            self.hud.root.show()
+        if self._options_return == "pause":
+            # The pause menu's "Настройки" button closed the pause panel but
+            # left `paused` set, so closing the settings stranded the player:
+            # no panel on screen, yet WASD, mouse look and E all refused to
+            # work and the game looked frozen. Go back to the pause menu the
+            # settings were opened from.
+            self.hud.open_panel("pause")
+            self._grab_mouse(False)
         else:
-            if self.hud.visible:
-                self.hud.root.show()
-            self._grab_mouse(not self.paused)
+            # Opened with O over the world (or over a shop/journal panel,
+            # which was closed on the way in): back to play.
+            self.paused = False
+            self._grab_mouse(True)
+        self._options_return = None
 
     def toggle_map(self):
         if self.mode == "menu" or self.hud.panel_mode:

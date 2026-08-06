@@ -976,6 +976,36 @@ def run() -> int:
         app.toggle_journal()
     check("колонки журнала не налезают", journal_columns_fit)
 
+    def options_release_controls():
+        """Closing the settings must hand the game back.
+
+        The pause menu's "Настройки" button closed the pause panel but left
+        `paused` set, so after leaving the settings the player stood in a
+        dead half-state: no panel on screen, and WASD, mouse look and E all
+        refused to work. Esc happened to recover it, but nothing on screen
+        said so. Settings opened from pause now return to pause; settings
+        opened with O over the world return straight to play.
+        """
+        # From play: O opens, O closes, play resumes.
+        app.toggle_options()
+        assert app.options.visible, "настройки не открылись"
+        app.toggle_options()
+        assert not app.options.visible, "настройки не закрылись"
+        assert not app.paused, "после настроек игра осталась на паузе"
+        # From the pause menu, the way the button does it.
+        app.on_escape()
+        assert app.paused and app.hud.panel_mode == "pause", \
+            "Esc не открыл меню паузы"
+        app.toggle_options()
+        assert app.options.visible and app.hud.panel_mode is None
+        app.toggle_options()
+        assert app.hud.panel_mode == "pause", \
+            "настройки из паузы не вернули в меню паузы"
+        app.on_escape()
+        assert not app.paused and app.hud.panel_mode is None, \
+            "после возврата из паузы управление не вернулось"
+    check("настройки не запирают игру", options_release_controls)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
