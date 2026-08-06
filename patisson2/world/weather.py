@@ -21,28 +21,8 @@ from ..engine.pipeline import MASK_SHADOW
 from ..engine.shaderlib import make_shader
 
 
-class WeatherState:
-    """What the sky is doing, and how long until it changes its mind.
+from .weatherstate import WeatherState  # noqa: F401  (re-exported)
 
-    Kept as an object rather than two attributes on the app so it can be saved
-    with everything else: a game saved in the rain used to load into sunshine,
-    which also sent the villagers back out from under their roofs.
-    """
-
-    def __init__(self, kind: str = "clear", timer: float = 40.0):
-        self.kind = kind
-        self.timer = timer
-
-    def to_dict(self) -> dict:
-        return {"kind": self.kind, "timer": self.timer}
-
-    def from_dict(self, data: dict) -> None:
-        from ..game.state import as_dict, as_float
-
-        data = as_dict(data)
-        kind = data.get("kind", "clear")
-        self.kind = kind if kind in ("clear", "cloudy", "rain", "snow") else "clear"
-        self.timer = max(1.0, as_float(data.get("timer"), 40.0))
 
 # (instances, box, particle size, fall speed, sway, tint, opacity, round?)
 PRESETS = {

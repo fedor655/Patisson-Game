@@ -69,9 +69,36 @@ def main() -> int:
     assert dialogue.TOPICS and fishing.SPECIES and cooking.RECIPES
     assert tutorial.STEPS if hasattr(tutorial, "STEPS") else True
 
+    # --- and the whole shared world has to run, not just the pieces ----
+    from ..net.world import SharedWorld
+
+    world = SharedWorld()
+    assert len(world.farm.plots) == 24, \
+        f"грядок на сервере {len(world.farm.plots)}, ждали 24"
+    bed = world.farm.plots[0]
+    assert world.farm.plant(bed, "wheat"), "на сервере нельзя посадить"
+    day = world.cfg.game.day_length
+    ripened = False
+    for _ in range(int(day * 4 / 0.1)):
+        world.update(0.1)
+        if bed.crop is None:
+            break                      # ripened and a crow took it
+        if bed.progress >= 1.0:
+            ripened = True
+            break
+        if bed.water < 0.5:
+            world.farm.water_plot(bed)
+    grew = ripened or any("созрел" in e for e in world.events)
+    assert grew, (f"пшеница не выросла на сервере: прогресс "
+                  f"{bed.progress:.2f}, события {world.events[-3:]}")
+    assert world.cycle.day >= 1, "часы сервера стоят"
+    snapshot = world.to_dict()
+    assert snapshot["farm"] and "state" in snapshot, "мир не сериализуется"
+
     print(f"без движка: {len(CROP_ORDER)} культур, {len(quests)} заданий, "
-          f"{len(dialogue.TOPICS)} тем, {len(fishing.SPECIES)} рыб — "
-          f"симуляция поднялась", flush=True)
+          f"{len(dialogue.TOPICS)} тем, {len(fishing.SPECIES)} рыб, "
+          f"общий мир на {len(world.farm.plots)} грядок дожил до дня "
+          f"{world.cycle.day + 1} — симуляция поднялась", flush=True)
     return 0
 
 

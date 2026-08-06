@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from panda3d.core import Vec3
+from ..game.view import Vec3
 
 SEASONS = ("Весна", "Лето", "Осень", "Зима")
 

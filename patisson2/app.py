@@ -1242,18 +1242,10 @@ class PatissonApp(ShowBase):
         self.weather_state.timer = value
 
     def _update_weather(self, dt: float):
-        self.weather_timer -= dt
-        if self.weather_timer > 0:
+        # The rule itself lives on WeatherState, so a hosted farm decides
+        # the weather the same way this one does.
+        if self.weather_state.roll(dt, self.cycle.season, self.rng) is None:
             return
-        self.weather_timer = self.rng.uniform(70.0, 190.0)
-        season = self.cycle.season
-        if season == 3:
-            choices, weights = ("clear", "cloudy", "snow"), (2, 3, 3)
-        elif season == 2:
-            choices, weights = ("clear", "cloudy", "rain"), (3, 3, 3)
-        else:
-            choices, weights = ("clear", "cloudy", "rain"), (5, 3, 2)
-        self.weather = self.rng.choices(choices, weights=weights)[0]
         if self.weather == "rain":
             self.state.notify("Пошёл дождь — грядки польются сами")
 
