@@ -230,6 +230,87 @@ def run() -> int:
         assert app.tutorial.finished, "обучение не считает себя пройденным"
     check("обучение проходится", tutorial_completes)
 
+    def tables_are_wired():
+        """Every entry in every declaration table must be both produced and
+        consumed somewhere.
+
+        Three bugs have had this exact shape: a prompt whose branch could not
+        run, a tutorial step whose event nobody emitted, a tool tier nothing
+        displayed. Each was invisible until someone played that far. A table
+        with a dead row in it is cheap to check and expensive to find by hand.
+        """
+        import re
+        from ..audio import bank
+        from ..config import Config
+        from ..game.cooking import RECIPES
+        from ..game.farming import CROPS, CROP_ORDER
+        from ..game.livestock import PRODUCT_PRICE
+        from ..game.state import (ACHIEVEMENTS, GameState, SHOP_ITEMS,
+                                  TOOL_TIERS, default_quests)
+
+        pkg = Path(__file__).resolve().parents[1]
+        source = "\n".join(p.read_text(encoding="utf-8")
+                           for p in pkg.rglob("*.py")
+                           if "__pycache__" not in str(p) and p.name != "smoke.py")
+
+        dead = [k for k in ACHIEVEMENTS if f'unlock("{k}")' not in source]
+        assert not dead, f"достижения, которые нечем открыть: {dead}"
+
+        kinds = {q.kind for q in default_quests()} - {"coins"}
+        dead = [k for k in kinds if f'record("{k}"' not in source]
+        assert not dead, f"виды заданий, которые никто не отмечает: {dead}"
+
+        # Every sound a call site asks for must exist, or play() silently
+        # does nothing and the action loses its voice.
+        asked = set(re.findall(
+            r'(?:self\.sound|\.play|play_at|sound)\(\s*"([a-z0-9_]+)"', source))
+        unknown = sorted(asked - set(bank.ALL))
+        assert not unknown, f"звуки, которых нет в банке: {unknown}"
+
+        # Every shop line has to be buyable, and every tool tier has to both
+        # sell and change something about the tool.
+        fresh = GameState(Config().game)
+        fresh.coins = 100_000
+        unbuyable = [key for key, *_ in SHOP_ITEMS if not fresh.buy(key)]
+        assert not unbuyable, f"товары, которые не покупаются: {unbuyable}"
+        # Buying is not enough: buy() falls through to a generic "put it in
+        # the bag" for anything it does not recognise, so an item nothing
+        # consumes would sell happily and then sit there for ever.
+        for key, name, _price, _desc in SHOP_ITEMS:
+            if key.startswith("seed_"):
+                assert key[5:] in CROPS, f"{key}: такой культуры нет"
+                continue
+            assert source.count(f'"{key}"') > 1, \
+                f"{name} ({key}) покупается, но нигде не используется"
+
+        fresh = GameState(Config().game)
+        fresh.coins = 100_000
+        for tool, tiers in TOOL_TIERS.items():
+            for _ in tiers:
+                was = getattr(fresh.upgrades, tool)
+                assert fresh.buy(f"tool_{tool}"), f"{tool}: тир {was + 1} не продаётся"
+                assert getattr(fresh.upgrades, tool) == was + 1, \
+                    f"{tool}: покупка не подняла тир"
+            seen = set()
+            for level in (1, 2, 3):
+                setattr(fresh.upgrades, tool, level)
+                seen.add(tuple(str(getattr(fresh.upgrades, p)) for p in dir(
+                    fresh.upgrades) if not p.startswith("_")
+                    and not callable(getattr(fresh.upgrades, p))))
+            assert len(seen) == 3, f"{tool}: тиры ничего не меняют"
+
+        # Crops need seeds to buy and a slot in the cycle; recipes need
+        # ingredients that exist.
+        for key in CROPS:
+            assert any(k == f"seed_{key}" for k, *_ in SHOP_ITEMS), \
+                f"{key}: семена не продаются"
+            assert key in CROP_ORDER, f"{key}: не выбирается клавишей Q"
+        have = set(CROPS) | set(PRODUCT_PRICE) | {"fish"}
+        for recipe in RECIPES:
+            missing = [k for k in recipe.inputs if k not in have]
+            assert not missing, f"{recipe.name}: ингредиенты негде взять {missing}"
+    check("таблицы подключены", tables_are_wired)
+
     def tier_is_visible():
         """The tool bar must say which tier you are holding.
 
