@@ -230,6 +230,33 @@ def run() -> int:
         assert app.tutorial.finished, "обучение не считает себя пройденным"
     check("обучение проходится", tutorial_completes)
 
+    def scarecrow_guards_the_garden():
+        """A working scarecrow must cover every bed, and a broken one none.
+
+        Its range was 11 m by eye against a garden whose far corner is 14.2 m
+        away, so it guarded thirteen of twenty-four beds — and the player
+        cannot move it. Half the farm was a lottery no upkeep could win.
+        """
+        from ..game.pests import SCARECROW_WORKING
+        from ..world.layout import plot_positions
+
+        crow = app.pests.scarecrow
+        keep = crow.condition
+        try:
+            crow.condition = 1.0
+            uncovered = [(x, y) for x, y in plot_positions()
+                         if not crow.protects(x, y)]
+            assert not uncovered, \
+                f"пугало не накрывает {len(uncovered)} грядок, дальняя {uncovered[-1]}"
+            # And once it has fallen apart it must stop protecting anything,
+            # or the crows would never come at all.
+            crow.condition = SCARECROW_WORKING - 0.01
+            still = [(x, y) for x, y in plot_positions() if crow.protects(x, y)]
+            assert not still, "развалившееся пугало всё ещё пугает ворон"
+        finally:
+            crow.condition = keep
+    check("пугало накрывает грядки", scarecrow_guards_the_garden)
+
     def travel_lands_somewhere_standable():
         """Fast travel must put the player where a person can be.
 
@@ -630,15 +657,26 @@ def run() -> int:
         app.pests.caw = lambda pos: heard.append(pos)
         plot = app.farm.plots[1]
         plot.crop, plot.progress = "patisson", 1.0
+        # A standing scarecrow now covers the whole garden, so no crow will
+        # come while it is in repair — that is the counter-play. Let it fall
+        # apart first, the way a player who ignores it does.
+        keep_condition = app.pests.scarecrow.condition
+        app.pests.scarecrow.condition = 0.0
         app.pests.timer = 0.0
         app.pests._spawn_crow()
-        assert app.pests.crows, "ворона не появилась"
+        assert app.pests.crows, "ворона не появилась даже без пугала"
         far = Vec3(500.0, 500.0, 0.0)          # out of scaring range
         for _ in range(400):
             app.pests.update(0.05, far, False)
             if heard:
                 break
         assert heard, "ворона села молча"
+        # And with the scarecrow standing again, no new crow may be sent.
+        app.pests.scarecrow.condition = 1.0
+        app.pests.crows.clear()
+        app.pests._spawn_crow()
+        assert not app.pests.crows, "ворона прилетела на охраняемые грядки"
+        app.pests.scarecrow.condition = keep_condition
         app.pests.caw = app._crow_caw
     check("ворона каркает", crow_round)
 

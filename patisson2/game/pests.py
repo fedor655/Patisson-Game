@@ -12,7 +12,7 @@ import random
 
 from panda3d.core import Vec3
 
-from ..world.layout import LAYOUT
+from ..world.layout import LAYOUT, plot_positions
 from ..world.props import place
 
 # --- weeds -------------------------------------------------------------------
@@ -29,7 +29,23 @@ CROW_INTERVAL = (28.0, 65.0)     # seconds of real time between attempts
 CROW_APPROACH = 5.0              # seconds circling before it settles to eat
 CROW_EAT = 6.0                   # seconds on the plot before the crop is gone
 CROW_SCARE_RANGE = 4.5           # how close the player must get to flush it
-SCARECROW_RANGE = 11.0
+
+
+def _scarecrow_range() -> float:
+    """Far enough to cover the garden it is standing in, and no further.
+
+    This was 11 metres, picked by eye, while the far corner of the beds is
+    14.2 m from where the scarecrow stands: it guarded thirteen of the
+    twenty-four beds and the player had no way to move it. Half the farm was a
+    lottery no amount of upkeep could win. Measuring it from the layout means
+    moving either the beds or the scarecrow keeps the promise true.
+    """
+    x, y, _h = LAYOUT["scarecrow"]
+    reach = max(math.hypot(px - x, py - y) for px, py in plot_positions())
+    return reach + 1.0            # a little past the last bed
+
+
+SCARECROW_RANGE = _scarecrow_range()
 SCARECROW_WEAR_PER_DAY = 0.42
 SCARECROW_RAIN_EXTRA = 0.55
 SCARECROW_WORKING = 0.35
