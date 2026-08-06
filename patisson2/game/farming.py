@@ -1,8 +1,8 @@
 """Crops, plots and growth.
 
-A plot tracks water, nutrients and health. Growth only advances while the plant
-has both water and food; neglect it long enough and it withers. Rain waters
-everything for free, and each crop only thrives in its own seasons.
+A plot tracks water, nutrients and health. Water is what keeps a plant alive —
+let a bed dry out and it withers — while food only decides how fast it grows.
+Rain waters everything for free, and each crop only thrives in its own seasons.
 """
 
 from __future__ import annotations
@@ -23,7 +23,9 @@ class Crop:
     key: str
     name: str
     stages: tuple            # ((model, scale), ...) low -> ripe
-    grow_days: float         # in-game days from seed to ripe, well tended
+    grow_days: float         # rate parameter, NOT an observable time:
+                             # only a bed held at full water and full food
+                             # ripens this fast. Use days_to_ripe().
     seed_price: int
     sell_price: int
     seasons: tuple           # season indices where it grows at full speed
@@ -31,6 +33,17 @@ class Crop:
     yield_count: int = 1
 
 
+# The prices are not free parameters. Four of the five crops used to be
+# beaten by another crop on profit AND speed AND season coverage all at once
+# -- including the patisson the game is named after, which wheat outgrew
+# twice as fast for half again the money. Nothing was worth planting but
+# tomatoes and wheat.
+#
+# The rule now: the longer a bed is tied up and the fewer seasons a crop
+# will take, the better it has to pay. That leaves every crop a reason to
+# exist -- wheat is the fast cheap staple, the pumpkin is the autumn
+# jackpot, and each step up the ladder costs patience or a season.
+# `no_crop_is_dominated` in the smoke test holds this to it.
 CROPS: dict[str, Crop] = {
     "patisson": Crop(
         "patisson", "Патиссон",
@@ -39,16 +52,17 @@ CROPS: dict[str, Crop] = {
     "carrot": Crop(
         "carrot", "Морковь",
         (("patisson_0", 0.9), ("carrot", 0.55), ("carrot", 1.0)),
-        grow_days=1.5, seed_price=4, sell_price=17, seasons=(0, 1, 2), thirst=0.85),
+        grow_days=1.5, seed_price=4, sell_price=13, seasons=(0, 1, 2), thirst=0.85,
+        yield_count=2),
     "tomato": Crop(
         "tomato", "Томат",
         (("patisson_0", 1.0), ("tomato", 0.5), ("tomato", 1.0)),
-        grow_days=2.0, seed_price=8, sell_price=31, seasons=(1, 2), thirst=1.25,
+        grow_days=2.0, seed_price=8, sell_price=22, seasons=(1, 2), thirst=1.25,
         yield_count=2),
     "wheat": Crop(
         "wheat", "Пшеница",
         (("patisson_0", 0.8), ("wheat", 0.55), ("wheat", 1.0)),
-        grow_days=1.2, seed_price=3, sell_price=11, seasons=(0, 1, 2), thirst=0.7,
+        grow_days=1.2, seed_price=3, sell_price=6, seasons=(0, 1, 2), thirst=0.7,
         yield_count=3),
     "pumpkin": Crop(
         "pumpkin", "Тыква",

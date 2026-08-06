@@ -344,6 +344,42 @@ def run() -> int:
         app.farm.clear(bed)
     check("сроки в альманахе настоящие", almanac_days_are_real)
 
+    def no_crop_is_dominated():
+        """No crop may lose to another one on every axis at once.
+
+        A crop that is beaten on profit AND on time AND on season coverage
+        has no reason to be planted, ever. Four of the five were: the
+        patisson lost to wheat on all three at once (8.7 против 13.1 монет
+        в день, 4.8 дня против 2.3, те же три сезона), and the game is
+        named after the patisson. Only tomatoes and wheat were worth the
+        soil.
+        """
+        from ..game.farming import CROPS, CROP_ORDER, days_to_ripe
+
+        stats = {}
+        for key in CROP_ORDER:
+            crop = CROPS[key]
+            days = days_to_ripe(crop)
+            profit = crop.yield_count * crop.sell_price - crop.seed_price
+            stats[key] = (profit / days, days, len(crop.seasons) or 4)
+            assert profit > 0, \
+                f"{crop.name}: семена дороже урожая ({crop.seed_price} " \
+                f"против {crop.yield_count * crop.sell_price})"
+
+        for a in CROP_ORDER:
+            pa, da, sa = stats[a]
+            for b in CROP_ORDER:
+                if a == b:
+                    continue
+                pb, db, sb = stats[b]
+                if pb >= pa and db <= da and sb >= sa:
+                    assert False, (
+                        f"{CROPS[a].name} незачем сажать: {CROPS[b].name} "
+                        f"лучше по всем осям — {pb:.1f} против {pa:.1f} "
+                        f"мон./день, {db:.1f} против {da:.1f} дн., "
+                        f"{sb} против {sa} сезонов")
+    check("у каждой культуры своя ниша", no_crop_is_dominated)
+
     def scarecrow_guards_the_garden():
         """A working scarecrow must cover every bed, and a broken one none.
 
