@@ -1491,6 +1491,29 @@ def run() -> int:
         assert "симуляция поднялась" in out, f"неожиданный вывод: {out[-300:]}"
     check("симуляция живёт без движка", simulation_runs_without_the_engine)
 
+    def two_players_share_one_farm():
+        """A hosted farm has to be one farm, not two that look alike.
+
+        Runs a real server on a loopback port and talks to it over a real
+        socket: an out-of-date client is turned away in words, two players
+        get their own numbers and the same 24 beds, what one plants and
+        waters shows up on the other's screen, the purse is shared, one
+        player's cable being yanked does not deafen the server, and a farm
+        with nobody on it stops advancing — left ticking empty, the
+        scarecrow rots through and the crows strip every ripe bed.
+        """
+        import subprocess
+
+        root = Path(__file__).resolve().parents[2]
+        done = subprocess.run(
+            [sys.executable, "-X", "utf8", "-m", "patisson2.tools.net_check"],
+            cwd=str(root), capture_output=True, text=True, timeout=300)
+        out = (done.stdout or "") + (done.stderr or "")
+        assert done.returncode == 0, \
+            f"общая ферма не сошлась:\n{out.strip()[-800:]}"
+        assert "всё сходится" in out, f"неожиданный вывод: {out[-300:]}"
+    check("двое на одной ферме", two_players_share_one_farm)
+
     check("карта", lambda: (app.toggle_map(), app.taskMgr.step(), app.toggle_map()))
     check("переход по карте", lambda: (app.toggle_map(), app.worldmap.move(2),
                                        app.travel_to_selected()))
