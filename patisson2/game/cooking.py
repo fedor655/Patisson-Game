@@ -8,10 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..world.layout import LAYOUT
 from .farming import CROPS
 from .livestock import PRODUCT_NAMES, PRODUCT_PRICE
 
-POT_POSITION = (13.4, -8.4)
+# Read from the layout rather than written out again: the pot, its blocker
+# and its marker on the map all have to stand in the same spot.
+POT_POSITION = LAYOUT["cooking_pot"][:2]
 
 
 @dataclass(frozen=True)

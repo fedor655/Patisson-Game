@@ -804,14 +804,31 @@ class PatissonApp(ShowBase):
 
     # ----------------------------------------------------------- interaction
 
+    def _same_room(self, x: float, y: float) -> bool:
+        """Is that spot on the player's side of the walls?
+
+        The interact radii are round numbers somebody chose; walls are
+        where the world actually stops. The cooking pot stands about two
+        metres from the house and its prompt reaches four and a half, so
+        201 places a player can stand *inside the house* were offered
+        "[K] Готовить" at a cauldron on the other side of a wall.
+        """
+        from .world.layout import indoors_at
+        return indoors_at(x, y) == indoors_at(self.player.pos.x,
+                                              self.player.pos.y)
+
     def _near_stall(self) -> bool:
         from .world.props import LAYOUT
         sx, sy, _h = LAYOUT["market_stall"]
-        return (self.player.pos.x - sx) ** 2 + (self.player.pos.y - sy) ** 2 < 16.0
+        return ((self.player.pos.x - sx) ** 2
+                + (self.player.pos.y - sy) ** 2 < 16.0
+                and self._same_room(sx, sy))
 
     def _near_pot(self) -> bool:
         px, py = POT_POSITION
-        return (self.player.pos.x - px) ** 2 + (self.player.pos.y - py) ** 2 < 20.0
+        return ((self.player.pos.x - px) ** 2
+                + (self.player.pos.y - py) ** 2 < 20.0
+                and self._same_room(px, py))
 
     def _near_bed(self, reach: float = 1.9) -> bool:
         bed = getattr(self.props, "bed_pos", None)
@@ -819,7 +836,8 @@ class PatissonApp(ShowBase):
             return False
         dx = self.player.pos.x - bed[0]
         dy = self.player.pos.y - bed[1]
-        return dx * dx + dy * dy < reach * reach
+        return (dx * dx + dy * dy < reach * reach
+                and self._same_room(bed[0], bed[1]))
 
     def _sleep(self):
         """Sleep through to six in the morning, waking rested."""
@@ -835,7 +853,9 @@ class PatissonApp(ShowBase):
     def _near_well(self) -> bool:
         from .world.props import LAYOUT
         wx, wy, _h = LAYOUT["well"]
-        return (self.player.pos.x - wx) ** 2 + (self.player.pos.y - wy) ** 2 < 9.0
+        return ((self.player.pos.x - wx) ** 2
+                + (self.player.pos.y - wy) ** 2 < 9.0
+                and self._same_room(wx, wy))
 
     def _near_water(self) -> bool:
         p = self.player.pos

@@ -438,6 +438,60 @@ def run() -> int:
             assert here >= water, f"«{label}»: игрок оказался в воде"
     check("перенос ставит на твёрдое", travel_lands_somewhere_standable)
 
+    def prompts_stop_at_walls():
+        """No prompt may reach through a wall.
+
+        The cooking pot stands about two metres from the house and its
+        prompt reached four and a half, so 201 places a player can stand
+        *inside the house* were offered "[K] Готовить" at a cauldron on
+        the other side of a wall. The radii are round numbers somebody
+        picked; walls are where the world actually stops. Every spot is
+        judged by the game's own `_near_*`, not by repeating the distance
+        test here — the first version of this sweep repeated it and went
+        on reporting the bug after it was fixed.
+        """
+        from ..game.cooking import POT_POSITION
+        from ..world.layout import LAYOUT, indoors_at
+
+        sx, sy, _sh = LAYOUT["market_stall"]
+        wx, wy, _wh = LAYOUT["well"]
+        bx, by = app.props.bed_pos[0], app.props.bed_pos[1]
+        spots = (("прилавок", sx, sy, 4.0, app._near_stall),
+                 ("котёл", POT_POSITION[0], POT_POSITION[1], 4.5, app._near_pot),
+                 ("колодец", wx, wy, 3.0, app._near_well),
+                 ("кровать", bx, by, 1.9, app._near_bed))
+        keep = (app.player.pos.x, app.player.pos.y)
+        step = 0.3
+        try:
+            for name, px, py, radius, near in spots:
+                room = indoors_at(px, py)
+                reach, wrong = 0, None
+                n = int(radius / step) + 1
+                for i in range(-n, n + 1):
+                    for j in range(-n, n + 1):
+                        x, y = px + i * step, py + j * step
+                        z = app.world.height_at(x, y)
+                        if z <= app.cfg.world.water_level + 0.05:
+                            continue
+                        nx, ny = app.world.blockers.resolve(x, y, 0.34, z)
+                        if (nx - x) ** 2 + (ny - y) ** 2 > 1e-6:
+                            continue          # solid: nobody can stand here
+                        stand(x, y)
+                        if not near():
+                            continue
+                        reach += 1
+                        if wrong is None and indoors_at(x, y) != room:
+                            wrong = (x, y, indoors_at(x, y))
+                assert reach > 0, \
+                    f"{name}: подсказка не появляется вообще нигде"
+                assert wrong is None, \
+                    f"{name}: подсказка работает из ({wrong[0]:.1f}, " \
+                    f"{wrong[1]:.1f}) — это {wrong[2] or 'снаружи'}, " \
+                    f"а сам объект {room or 'снаружи'}"
+        finally:
+            stand(*keep)
+    check("подсказки не проходят сквозь стены", prompts_stop_at_walls)
+
     def schedules_are_walkable():
         """Villagers must stand somewhere a person could stand, and get there.
 

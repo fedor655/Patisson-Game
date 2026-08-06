@@ -154,6 +154,10 @@ class Props:
         self.world.blockers.add_post(wx, wy, 0.95, top=1.2)
         sx, sy, sh = LAYOUT["market_stall"]
         self.world.blockers.add_box(sx, sy, 1.25, 0.55, sh, top=1.3)
+        # The cauldron had no blocker at all: you could stand in the middle
+        # of it, and the map put a marker where nothing stopped you.
+        cx, cy, _ch = LAYOUT["cooking_pot"]
+        self.world.blockers.add_post(cx, cy, 0.55, top=1.0)
         # A few crates and barrels for dressing.
         for x, y, name in ((14.0, -8.6, "crate"), (13.2, -7.6, "crate"),
                            (-16.5, -12.0, "barrel"), (-15.6, -12.4, "barrel"),
