@@ -26,12 +26,14 @@ android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 
-# python-for-android берётся выпуском, а не master. master строит
-# hostpython 3.14, и вложенный в неё pip падает на импорте
-# BuildDependencyInstallError — сборка умирает через восемнадцать
-# минут, дойдя до компиляции Kivy. v2026.05.09 вышел за два дня до
-# buildozer 1.6.0: это пара, которую собирали вместе.
-p4a.branch = v2026.05.09
+# Связка 2024 года. Дело было не в master: v2026.05.09 строит ту же
+# hostpython 3.14, у которой ломается собственный pip —
+# «cannot import name BuildDependencyInstallError» после
+# восемнадцати минут работы. Выпуск 2024.01.21 строит Python 3.11 и
+# обкатан годами; NDK к нему прикреплён свой, иначе буилдозер
+# возьмёт свежий, с которым этот p4a не знаком.
+p4a.branch = v2024.01.21
+android.ndk = 25b
 
 [buildozer]
 log_level = 2
