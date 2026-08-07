@@ -402,6 +402,50 @@ def run() -> int:
                 f"{season_days} дн.")
     check("у каждой культуры своя ниша", no_crop_is_dominated)
 
+    def crops_are_spoken_of_correctly():
+        """«Морковь созрел» игрок читал каждый день целый год.
+
+        Сообщения о грядке складываются из названия культуры, а прошедшее
+        время в русском согласуется с родом. Род теперь лежит в самой
+        записи о культуре — а здесь проверяется, что он не выдуман:
+        название на -а/-я не может быть мужского рода, а на твёрдый
+        согласный — женского. Мягкий знак двусмыслен (морковь женского,
+        а картофель мужского), и его решает автор.
+        """
+        from ..game.farming import (CROPS, CROP_ORDER, DIED, RIPE, died_line,
+                                    ripe_line)
+
+        # Названия на мягкий знак род не выдают, и правило на них слепо —
+        # ровно на «Морковь», с которой всё и началось. Такие записаны
+        # поимённо: новая культура на -ь обязана попасть сюда, а старую
+        # нельзя молча переправить.
+        soft = {"Морковь": "f"}
+        bad = []
+        for key in CROP_ORDER:
+            crop = CROPS[key]
+            if crop.gender not in RIPE:
+                bad.append(f"{crop.name}: род «{crop.gender}» неизвестен")
+                continue
+            last = crop.name[-1].lower()
+            if last in "ая" and crop.gender != "f":
+                bad.append(f"{crop.name} на «{last}» — не мужского рода")
+            elif last not in "аяоеь" and crop.gender != "m":
+                bad.append(f"{crop.name} на согласный — мужского рода")
+            elif last == "ь":
+                want = soft.get(crop.name)
+                if want is None:
+                    bad.append(f"{crop.name}: род по мягкому знаку не вывести,"
+                               " впишите его в таблицу проверки")
+                elif want != crop.gender:
+                    bad.append(f"{crop.name}: род «{crop.gender}», "
+                               f"а должен быть «{want}»")
+            if not ripe_line(crop).endswith(RIPE[crop.gender] + "!"):
+                bad.append(f"о спелой {crop.name}: {ripe_line(crop)!r}")
+            if not died_line(crop).endswith(DIED[crop.gender] + "."):
+                bad.append(f"о погибшей {crop.name}: {died_line(crop)!r}")
+        assert not bad, "; ".join(bad)
+    check("о культурах говорят грамотно", crops_are_spoken_of_correctly)
+
     def weeds_and_rot_come_from_the_bed():
         """Сорняки — работа на день, а гниль — следствие, а не погода.
 

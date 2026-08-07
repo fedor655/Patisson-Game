@@ -28,6 +28,9 @@ class Crop:
     seasons: tuple           # season indices where it grows at full speed
     thirst: float = 1.0      # water use multiplier
     yield_count: int = 1
+    gender: str = "m"        # род названия: сообщения о грядке
+                             # строятся из имени, и «Морковь созрел»
+                             # игрок читал весь год
 
 
 # The prices are not free parameters. Four of the five crops used to be
@@ -50,7 +53,7 @@ CROPS: dict[str, Crop] = {
         "carrot", "Морковь",
         (("patisson_0", 0.9), ("carrot", 0.55), ("carrot", 1.0)),
         grow_days=1.5, seed_price=4, sell_price=13, seasons=(0, 1, 2), thirst=0.85,
-        yield_count=2),
+        yield_count=2, gender="f"),
     "tomato": Crop(
         "tomato", "Томат",
         (("patisson_0", 1.0), ("tomato", 0.5), ("tomato", 1.0)),
@@ -60,7 +63,7 @@ CROPS: dict[str, Crop] = {
         "wheat", "Пшеница",
         (("patisson_0", 0.8), ("wheat", 0.55), ("wheat", 1.0)),
         grow_days=1.2, seed_price=3, sell_price=6, seasons=(0, 1, 2), thirst=0.7,
-        yield_count=3),
+        yield_count=3, gender="f"),
     # Единственное, что вызревает зимой. Числа выведены, а не
     # выдуманы: 1.6 даёт 3.1 дня до спелости, то есть два урожая
     # укладываются в семидневную зиму; 9 монет за корень при двух
@@ -70,11 +73,12 @@ CROPS: dict[str, Crop] = {
         "turnip", "Репа",
         (("patisson_0", 0.7), ("turnip", 0.55), ("turnip", 1.0)),
         grow_days=1.6, seed_price=4, sell_price=9, seasons=(3,),
-        thirst=0.7, yield_count=2),
+        thirst=0.7, yield_count=2, gender="f"),
     "pumpkin": Crop(
         "pumpkin", "Тыква",
         (("patisson_0", 1.1), ("pumpkin", 0.42), ("pumpkin", 0.72), ("pumpkin", 1.0)),
-        grow_days=3.5, seed_price=16, sell_price=88, seasons=(2,), thirst=1.4),
+        grow_days=3.5, seed_price=16, sell_price=88, seasons=(2,), thirst=1.4,
+        gender="f"),
 }
 
 CROP_ORDER = ("patisson", "carrot", "tomato", "wheat", "pumpkin",
@@ -151,6 +155,21 @@ BLIGHT_DAILY_CHANCE = 0.55  # per in-game day, per susceptible plot
 # almanac and Богдан both say so, quoting these numbers.
 BONUS_HEALTH = 0.92
 BONUS_FOOD = 0.6
+
+
+# Прошедшее время в русском согласуется с родом, а сообщения о грядке
+# складываются из названия культуры. «Морковь созрел» и «Пшеница погиб»
+# игрок читал каждый день. Форма берётся из самой записи о культуре.
+RIPE = {"m": "созрел", "f": "созрела", "n": "созрело"}
+DIED = {"m": "погиб", "f": "погибла", "n": "погибло"}
+
+
+def ripe_line(crop: Crop) -> str:
+    return f"{crop.name} {RIPE[crop.gender]}!"
+
+
+def died_line(crop: Crop) -> str:
+    return f"{crop.name} {DIED[crop.gender]}."
 
 
 def growth_rate(crop: Crop, water: float, food: float, weeds: float,
@@ -419,7 +438,7 @@ class Farm:
                     plot._wither_warned = True
                     events.append(f"{crop.name} вянет — нужна вода!")
                 if plot.health <= 0.0:
-                    events.append(f"{crop.name} погиб.")
+                    events.append(died_line(crop))
                     self.clear(plot)
                     continue
 
@@ -427,7 +446,7 @@ class Farm:
             stage = self._stage_for(crop, plot.progress)
             if stage != plot.stage:
                 if plot.stage >= 0 and stage == len(crop.stages) - 1:
-                    events.append(f"{crop.name} созрел!")
+                    events.append(ripe_line(crop))
                 self._refresh_model(plot)
         return events
 
