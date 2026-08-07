@@ -74,6 +74,11 @@ def main():
 
     def frame():
         app.taskMgr.step()
+        # Итоги года останавливают мир и ждут нажатия. Без этого
+        # прогон, которому заказали два года, честно тикал в пустоту
+        # с двадцать девятого дня и отчитывался за один.
+        if app.hud.panel_mode == "finale":
+            app.close_finale()
         fresh = {n[0] for n in st.notifications}
         for text in fresh - last_notes:
             seen_notes[text] = seen_notes.get(text, 0) + 1

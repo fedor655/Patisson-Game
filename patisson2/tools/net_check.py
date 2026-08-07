@@ -171,7 +171,7 @@ async def run() -> int:
     if problems:
         return 1
     print("сеть: рукопожатие, снимок мира, чужой полив, общий кошелёк, "
-          "обрыв, покой пустой фермы, клиент игры, телефон, "
+          "обрыв, покой пустой фермы, клиент игры, второй клиент, "
           "перезапуск сервера и мусор в сокете — всё сходится",
           flush=True)
     return 0
@@ -240,24 +240,24 @@ async def check_real_client(server, port: int) -> list[str]:
 async def check_phone(server, port: int) -> list[str]:
     """The phone talks to the same farm, over the same wire.
 
-    The mobile link is deliberately a separate, smaller implementation:
+    The thin link is deliberately a separate, smaller implementation:
     a phone has no Panda3D, no numpy and no room for the whole game, so
     it shares the message format and nothing else. Which means it can
     drift from the server, and this is what catches it if it does.
     """
-    from ..mobile.link import FarmLink
+    from ..net.thin import FarmLink
 
     problems: list[str] = []
-    phone = FarmLink("127.0.0.1", port, name="Телефон")
+    phone = FarmLink("127.0.0.1", port, name="Тонкий")
     for _ in range(400):
         phone.pump()
         if phone.status != "connecting":
             break
         await asyncio.sleep(0.02)
     if phone.status != "online":
-        return [f"телефон не подключился: {phone.status} {phone.error}"]
+        return [f"тонкий клиент не подключился: {phone.status} {phone.error}"]
     if len(phone.plots) != 24 or len(phone.layout) != 24:
-        problems.append(f"телефону пришло {len(phone.plots)} грядок и "
+        problems.append(f"тонкому клиенту пришло {len(phone.plots)} грядок и "
                         f"{len(phone.layout)} координат вместо 24")
 
     server.world.farm.plant(server.world.farm.plots[7], "carrot")
@@ -267,7 +267,7 @@ async def check_phone(server, port: int) -> list[str]:
             break
         await asyncio.sleep(0.02)
     if phone.plots.get(7, {}).get("crop") != "carrot":
-        problems.append("телефон не увидел чужую посадку")
+        problems.append("тонкий клиент не увидел чужую посадку")
 
     server.world.farm.plots[7].water = 0.0
     phone.act("water", 7)
@@ -277,9 +277,9 @@ async def check_phone(server, port: int) -> list[str]:
             break
         await asyncio.sleep(0.02)
     if server.world.farm.plots[7].water <= 0.0:
-        problems.append("ферма не получила полив с телефона")
+        problems.append("ферма не получила полив от тонкого клиента")
 
-    # Амбар на общей ферме общий, и телефон должен видеть именно его:
+    # Амбар на общей ферме общий, и второй клиент должен видеть именно его:
     # без этого «Семена» и «Удобрить» — кнопки, которые иногда молча
     # ничего не делают, потому что класть в землю нечего.
     server.world.state.inventory["seed_wheat"] = 7
@@ -290,12 +290,12 @@ async def check_phone(server, port: int) -> list[str]:
             break
         await asyncio.sleep(0.02)
     if phone.inventory.get("seed_wheat") != 7:
-        problems.append(f"телефон не увидел амбар фермы: "
+        problems.append(f"тонкий клиент не увидел амбар фермы: "
                         f"{phone.inventory}")
     if phone.inventory.get("fertilizer") != 3:
-        problems.append("телефон не увидел удобрение")
+        problems.append("тонкий клиент не увидел удобрение")
 
-    # Состояние пугала решает ферма — телефон только рисует ответ.
+    # Состояние пугала решает ферма — клиент только рисует ответ.
     crow = server.world.pests.scarecrow
     crow.condition = 1.0
     for _ in range(60):
@@ -304,7 +304,7 @@ async def check_phone(server, port: int) -> list[str]:
             break
         await asyncio.sleep(0.02)
     if phone.crow_fix or not phone.crow_ok:
-        problems.append("целое пугало телефон считает сломанным")
+        problems.append("целое пугало тонкий клиент считает сломанным")
     crow.condition = 0.1
     for _ in range(60):
         phone.pump()
@@ -312,11 +312,11 @@ async def check_phone(server, port: int) -> list[str]:
             break
         await asyncio.sleep(0.02)
     if phone.crow_ok or not phone.crow_fix:
-        problems.append("упавшее пугало телефон считает целым "
+        problems.append("упавшее пугало тонкий клиент считает целым "
                         f"({phone.scarecrow})")
     crow.condition = 1.0
     if phone.clock.get("season") is None:
-        problems.append("на телефон не пришли часы фермы")
+        problems.append("тонкому клиенту не пришли часы фермы")
     phone.close()
     return problems
 

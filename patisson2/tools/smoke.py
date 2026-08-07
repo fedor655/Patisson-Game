@@ -643,40 +643,6 @@ def run() -> int:
         assert not bad, "; ".join(bad)
     check("сорняки и гниль — от грядки", weeds_and_rot_come_from_the_bed)
 
-    def the_build_only_needs_files_the_repo_has():
-        """Сборка не может зависеть от файла, которого нет в репозитории.
-
-        android/buildozer.spec — весь рецепт APK — попал под правило
-        `*.spec`, написанное для PyInstaller. Файл лежал на диске, всё
-        выглядело собранным, а на сервере сборки его не было: задача
-        падала на `cp` через десять секунд, три пуша подряд, и никто не
-        сказал ни слова — `git add -A` пропускает игнорируемое молча.
-        """
-        import re
-        import subprocess
-
-        root = Path(__file__).resolve().parents[2]
-        flow = root / ".github" / "workflows" / "apk.yml"
-        assert flow.exists(), "файл сборки APK пропал"
-        text = flow.read_text(encoding="utf-8")
-        # Пути, которые задача копирует или запускает у себя в дереве.
-        wanted = set(re.findall(r"(?:cp|python)\s+\"?\$?\{?[A-Z_]*\}?/?"
-                                r"([a-zA-Z0-9_./-]+\.(?:py|spec|png|ico))",
-                                text))
-        wanted |= set(re.findall(r"^\s*-\s+\"?([a-zA-Z0-9_./-]+"
-                                 r"\.(?:py|spec|png|ico))\"?\s*$",
-                                 text, re.M))
-        assert len(wanted) >= 4, f"разбор сборки нашёл только {wanted}"
-        tracked = set(subprocess.run(
-            ["git", "ls-files"], cwd=str(root),
-            capture_output=True, text=True, timeout=120).stdout.split())
-        assert tracked, "git не отдал список файлов — проверка бы прошла впустую"
-        missing = sorted(p for p in wanted if p not in tracked)
-        assert not missing, (
-            "сборке нужны файлы, которых нет в репозитории: "
-            + ", ".join(missing))
-    check("сборке хватает того, что в репозитории",
-          the_build_only_needs_files_the_repo_has)
 
     def screenshots_are_the_ones_the_tool_makes():
         """Снимки в репозитории должны быть теми, что делает инструмент.
@@ -2001,28 +1967,6 @@ def run() -> int:
         assert "всё сходится" in out, f"неожиданный вывод: {out[-300:]}"
     check("двое на одной ферме", two_players_share_one_farm)
 
-    def the_phone_can_reach_a_farm():
-        """Телефон должен уметь дойти до фермы, а не только нарисовать её.
-
-        Адрес брался из аргументов командной строки. На телефоне их нет —
-        приложение всегда стучалось в 127.0.0.1, где ничего нет и быть не
-        может. То есть подключиться к ферме с телефона было нельзя вообще
-        никак, и ни одна проверка этого не замечала: все они смотрели на
-        связь (link.py), а экран никто не трогал.
-
-        Kivy забирает окно себе, поэтому — отдельным процессом.
-        """
-        import subprocess
-
-        root = Path(__file__).resolve().parents[2]
-        done = subprocess.run(
-            [sys.executable, "-X", "utf8", "-m", "patisson2.tools.phone_check"],
-            cwd=str(root), capture_output=True, text=True, timeout=300)
-        out = (done.stdout or "") + (done.stderr or "")
-        assert done.returncode == 0, \
-            f"телефон не дошёл до фермы:\n{out.strip()[-800:]}"
-        assert "всё сходится" in out, f"неожиданный вывод: {out[-300:]}"
-    check("телефон доходит до фермы", the_phone_can_reach_a_farm)
 
     def two_hands_on_one_bed():
         """Двое жмут на одну грядку, и амбар у них общий.
@@ -2414,25 +2358,6 @@ def run() -> int:
             app.open_main_menu()
     check("сетевая игра из меню", joining_a_farm_works_from_the_game)
 
-    def phone_client_stays_thin():
-        """Телефонный клиент не должен потянуть за собой игру.
-
-        В APK едут два файла. Стоит кому-нибудь добавить туда движок,
-        numpy или импорт из patisson2 — сборка сломается, и узнается это
-        через час на CI, а не здесь. Импорты читаются разбором кода:
-        искать эти слова текстом нельзя, они честно упоминаются в
-        комментариях, которые объясняют, почему их там нет.
-        """
-        import subprocess
-
-        root = Path(__file__).resolve().parents[2]
-        done = subprocess.run(
-            [sys.executable, "-X", "utf8", str(root / "android" / "check_thin.py")],
-            cwd=str(root), capture_output=True, text=True, timeout=120)
-        out = (done.stdout or "") + (done.stderr or "")
-        assert done.returncode == 0, f"клиент растолстел:\n{out.strip()[-400:]}"
-        assert "тонкий" in out, f"неожиданный вывод: {out[-200:]}"
-    check("клиент для телефона тонкий", phone_client_stays_thin)
 
     def network_address_is_typed_in_the_game():
         """Адрес фермы вводится в игре, а не в текстовом редакторе.
