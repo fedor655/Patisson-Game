@@ -296,7 +296,10 @@ ACHIEVEMENTS = {
     "angler": "Поймано 20 рыб",
     "rich": "Скоплено 1000 монет",
     "night_owl": "Полночь на ферме",
-    "all_crops": "Выращены все пять культур",
+    # Число берётся из самого списка культур. Шестая (репа) появилась —
+    # и журнал ещё сезон обещал «все пять», хотя правило требовало
+    # шесть: достижение не выдавалось за то, что в нём написано.
+    "all_crops": f"Выращены все {len(CROP_ORDER)} культур",
     "green_thumb": "10 растущих грядок сразу",
     "first_dish": "Первое блюдо у котла",
     "chef": "Приготовить все пять блюд",
@@ -308,6 +311,7 @@ ACHIEVEMENTS = {
     "toolmaster": "Улучшить все инструменты до предела",
     "gardener": "Прополоть двадцать грядок",
     "crow_chaser": "Прогнать ворону с грядки",
+    "year": "Прожит год на ферме",
 }
 
 
@@ -342,6 +346,9 @@ class GameState:
         # species key -> (count, total kilos), for value and the journal
         self.fish_log: dict[str, list] = {}
         self.total_earned = 0
+        # Итоги года показываются один раз. Флаг живёт в сохранении:
+        # иначе загрузка старой игры встречала бы игрока финалом.
+        self.finale_shown = False
         self.best_fish: tuple[str, float] | None = None
 
     # ------------------------------------------------------------ inventory
@@ -536,6 +543,7 @@ class GameState:
             "weeded": self.weeded,
             "fish_log": self.fish_log,
             "total_earned": self.total_earned,
+            "finale_shown": self.finale_shown,
             "best_fish": list(self.best_fish) if self.best_fish else None,
             "quests": [
                 {"key": q.key, "progress": q.progress, "done": q.done,
@@ -569,6 +577,7 @@ class GameState:
             self.upgrades.rod = 3
         self.achievements = {str(a) for a in as_list(data.get("achievements"))}
         self.play_time = as_float(data.get("play_time"))
+        self.finale_shown = bool(data.get("finale_shown"))
         self.cooked = {str(k): as_int(v)
                        for k, v in as_dict(data.get("cooked")).items()}
         self.weeded = as_int(data.get("weeded"))

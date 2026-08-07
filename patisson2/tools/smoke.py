@@ -489,6 +489,108 @@ def run() -> int:
     check("страницы журнала помещаются",
           journal_pages_stay_inside_their_panel)
 
+    def achievements_do_not_misstate_their_counts():
+        """Достижение «собери все» не должно называть неверное число.
+
+        «Выращены все пять культур» пережило появление шестой: правило
+        перебирало CROP_ORDER и требовало шесть, а журнал ещё сезон
+        обещал пять. Число теперь берётся из самого списка, а это
+        проверяет, что ни одно «все N» не разошлось со своим набором.
+        """
+        import re
+
+        from ..game.cooking import RECIPES
+        from ..game.farming import CROP_ORDER
+        from ..game.fishing import SPECIES
+        from ..game.state import ACHIEVEMENTS
+
+        words = {"один": 1, "два": 2, "две": 2, "три": 3, "четыре": 4,
+                 "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9,
+                 "десять": 10, "двадцать": 20}
+        expect = {"all_crops": len(CROP_ORDER),
+                  "chef": len(RECIPES),
+                  "ichthyologist": len([s for s in SPECIES
+                                        if s.key != "boot"])}
+        bad = []
+        for key, count in expect.items():
+            text = ACHIEVEMENTS[key]
+            said = [int(n) for n in re.findall(r"\d+", text)]
+            said += [v for w, v in words.items()
+                     if re.search(rf"\b{w}\b", text.lower())]
+            wrong = sorted({n for n in said if n != count})
+            if wrong:
+                bad.append(f"«{text}» обещает {wrong}, а набор из {count}")
+        assert not bad, "; ".join(bad)
+    check("достижения не врут про число",
+          achievements_do_not_misstate_their_counts)
+
+    def the_year_has_an_ending():
+        """Через год игра подводит итог — и делает это один раз.
+
+        Игру нельзя было закончить: она шла, пока не надоест, и ни разу
+        не сказала, чем всё это было. Конец выведен из самой игры —
+        четыре сезона складываются в год.
+        """
+        from ..game.state import GameState
+        from ..ui.hud import FINALE_FLOOR, JOURNAL_TOP
+
+        day = app.cfg.game.day_length
+        keep = (st.finale_shown, app.cycle.total_time, app.paused,
+                app.hud.panel_mode, set(st.achievements))
+        try:
+            app.hud.close_panel()
+            app.paused = False
+            st.finale_shown = False
+            st.achievements.discard("year")
+
+            # За день до конца года ничего не происходит.
+            app.cycle.total_time = (app.year_length() - 1) * day + 0.5 * day
+            app._check_year()
+            assert app.hud.panel_mode is None, \
+                f"итоги показаны на {app.cycle.day + 1}-й день"
+
+            app.cycle.total_time = app.year_length() * day + 0.1 * day
+            app._check_year()
+            assert app.hud.panel_mode == "finale", \
+                f"год кончился без итогов (день {app.cycle.day + 1})"
+            assert "year" in st.achievements, "год прожит, а достижения нет"
+            assert app.paused, "мир продолжает идти под итогами года"
+            assert len(app.hud.panel_buttons) == 2, \
+                f"кнопок под итогами {len(app.hud.panel_buttons)}"
+
+            shown = (app.hud.panel_body.getText() + "\n"
+                     + app.hud.panel_body2.getText())
+            for want in ("Достижений", "Заработано всего", str(st.coins),
+                         f"{len(st.achievements)} из"):
+                assert want in shown, f"в итогах нет «{want}»: {shown!r}"
+            rows = app.hud.panel_body.textNode.getNumRows()
+            line = app.hud.panel_body.textNode.getLineHeight()
+            bottom = JOURNAL_TOP - line * rows * app.hud.panel_body.getScale()[0]
+            assert bottom >= FINALE_FLOOR - 1e-6, \
+                f"итоги кончаются на {bottom:.3f} — под кнопками"
+
+            # «Играть дальше» возвращает игру, и второй раз итогов нет.
+            app.close_finale()
+            assert app.hud.panel_mode is None and not app.paused, \
+                "после итогов игра не вернулась"
+            app.cycle.total_time = app.year_length() * day + 0.9 * day
+            app._check_year()
+            assert app.hud.panel_mode is None, "итоги показались второй раз"
+
+            fresh = GameState(app.cfg.game)
+            fresh.from_dict(st.to_dict())
+            assert fresh.finale_shown, \
+                "флаг итогов не пережил сохранение — при загрузке год кончится снова"
+        finally:
+            (st.finale_shown, app.cycle.total_time, app.paused,
+             mode, achievements) = keep
+            st.achievements.clear()
+            st.achievements.update(achievements)
+            app.hud.close_panel()
+            if mode:
+                app.hud.open_panel(mode)
+    check("у года есть конец", the_year_has_an_ending)
+
     def scarecrow_guards_the_garden():
         """A working scarecrow must cover every bed, and a broken one none.
 

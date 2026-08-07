@@ -335,6 +335,31 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
     app.hud.journal_page = 0
     app.hud.close_panel()
 
+    # Итоги года. Часы переводятся, а не выжидаются: год — это 28 дней,
+    # а прожитый год дорисовывается — снимок должен показывать страницу
+    # такой, какой её увидит игрок, а не пустой бланк.
+    st.total_earned = 3120
+    st.play_time = 74 * 60
+    st.cooked.update({"soup": 5, "salad": 3, "pie": 2, "jam": 4})
+    app.farm.harvest_log.update({"patisson": 24, "carrot": 16, "wheat": 31,
+                                 "tomato": 11, "pumpkin": 5, "turnip": 13})
+    st.add_fish("roach", 0.3)
+    st.add_fish("crucian", 0.7)
+    st.add_fish("perch", 0.9)
+    for key in ("first_seed", "first_harvest", "patisson_lover", "angler",
+                "rich", "night_owl", "green_thumb", "first_dish", "farmhand",
+                "pike_hunter", "well_rested", "gardener", "crow_chaser"):
+        st.unlock(key)
+    keep_time = app.cycle.total_time
+    app.cycle.total_time = app.year_length() * cfg.game.day_length \
+        + 0.42 * cfg.game.day_length
+    st.finale_shown = False
+    app._check_year()
+    settle(3)
+    shot("17f-finale.png")
+    app.close_finale()
+    app.cycle.total_time = keep_time
+
     app.hud.open_panel("pause")
     settle(3)
     shot("17e-pause.png", hour=10.0)

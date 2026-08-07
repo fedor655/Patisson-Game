@@ -22,6 +22,8 @@ MARK = "x"
 # страницы стоит на -0.64, и налезать на неё нельзя.
 JOURNAL_TOP = 0.50
 JOURNAL_FLOOR = -0.60
+# У итогов года внизу ещё и кнопки — текст обязан кончиться выше них.
+FINALE_FLOOR = -0.46
 
 
 def fit_text(button, max_width: float, start: float, floor: float = 0.028):
@@ -254,6 +256,8 @@ class HUD:
         self.refresh_panel()
         if mode == "pause":
             self._build_pause_buttons()
+        elif mode == "finale":
+            self._build_finale_buttons()
 
     def close_panel(self):
         self.panel_mode = None
@@ -348,6 +352,35 @@ class HUD:
         left = ["СТАТИСТИКА", ""] + [f"  {label}:" if label else "" for label, _ in rows]
         right = ["", ""] + [value for _, value in rows]
         return left, right
+
+    def _finale(self):
+        """Итоги года — то, к чему всё это шло.
+
+        Ровно те же строки, что и на странице статистики. Второй набор
+        цифр под теми же названиями обязательно разошёлся бы с первым, и
+        игрок увидел бы два разных ответа на один вопрос.
+        """
+        left, right = self._journal_stats()
+        left[0] = "ЧЕМ КОНЧИЛСЯ ГОД"
+        return left, right
+
+    def _build_finale_buttons(self):
+        app = self.base
+        entries = [("Играть дальше", app.close_finale),
+                   ("В главное меню", app.open_main_menu)]
+        pitch = self.PAUSE_HALF_W * 2.0 + self.PAUSE_GAP
+        left = -pitch * (len(entries) - 1) / 2.0
+        for col, (label, cmd) in enumerate(entries):
+            b = DirectButton(
+                parent=self.panel, text=label, text_font=self.font,
+                text_fg=INK, text_scale=0.033, text_pos=(0, -0.011),
+                frameColor=((0.12, 0.14, 0.12, 0.9), (0.26, 0.32, 0.18, 0.95),
+                            (0.34, 0.42, 0.22, 1.0), (0.1, 0.1, 0.1, 0.6)),
+                frameSize=(-self.PAUSE_HALF_W, self.PAUSE_HALF_W,
+                           -0.043, 0.053),
+                relief=1, pos=(left + col * pitch, 0, -0.545), command=cmd)
+            b.setTransparency(TransparencyAttrib.MAlpha)
+            self.panel_buttons.append(b)
 
     def _pause_controls(self):
         return ["УПРАВЛЕНИЕ", "",
@@ -512,6 +545,23 @@ class HUD:
             self.panel_body2.setPos(split, JOURNAL_TOP)
             self.panel_body2.show()
             self.panel_hint.setText("←→ — раздел · J или Esc — закрыть")
+        elif self.panel_mode == "finale":
+            # Тот же двухколоночный расклад, что у статистики, и тот же
+            # вывод масштаба: страница обязана кончиться выше кнопок.
+            left, right = self._finale()
+            self.panel_title.setText("Год на ферме")
+            self.panel_body.setText("\n".join(left))
+            self.panel_body2.setText("\n".join(right))
+            rows = max(len(left), len(right), 1)
+            line = self.panel_body.textNode.getLineHeight() or 1.0
+            scale = min(0.045, (JOURNAL_TOP - FINALE_FLOOR) / (line * rows))
+            self.panel_body.setScale(scale)
+            self.panel_body.setPos(-0.95, JOURNAL_TOP)
+            self.panel_body2.setScale(scale)
+            self.panel_body2.setPos(-0.30, JOURNAL_TOP)
+            self.panel_body2.show()
+            self.panel_hint.setText(
+                "Год прошёл. Ферма никуда не денется — можно играть дальше.")
         elif self.panel_mode == "pause":
             # Two columns, and both must stop well above the buttons: as one
             # list this ran straight underneath them and the bag was unreadable.

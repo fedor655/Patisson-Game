@@ -692,6 +692,35 @@ class PatissonApp(ShowBase):
         self.hud.open_panel("pause")
         self._grab_mouse(False)
 
+    def year_length(self) -> int:
+        """Сколько дней в круге сезонов — из настроек, а не из головы."""
+        return 4 * self.cfg.game.season_days
+
+    def _check_year(self):
+        """Круг замкнулся — показать, чем кончился год.
+
+        Игру было нельзя закончить: она шла ровно до тех пор, пока
+        игроку не надоест, и ни разу не подводила итог. Конец выведен
+        из самой игры, а не назначен: четыре сезона — это год, и на
+        следующей весне ферме есть что сказать.
+        """
+        st = self.state
+        if st.finale_shown or self.cycle.day < self.year_length():
+            return
+        st.finale_shown = True
+        st.unlock("year")
+        self.sound("achieve", 0.9)
+        self.paused = True
+        self.hud.open_panel("finale")
+        self._grab_mouse(False)
+
+    def close_finale(self):
+        """Итоги посмотрены — ферма продолжается."""
+        self.sound("click", 0.5)
+        self.hud.close_panel()
+        self.paused = False
+        self._grab_mouse(True)
+
     def toggle_shop(self):
         if self.mode == "menu":
             return
@@ -1367,6 +1396,7 @@ class PatissonApp(ShowBase):
             self.livestock.update(dt)
             for e in events:
                 st.notify(e)
+            self._check_year()
 
         if in_menu:
             cam_pos = self.menu.update(dt, self.camera, self.world)
