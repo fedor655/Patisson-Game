@@ -51,8 +51,13 @@ jobs:
       - name: Поставить buildozer
         run: |
           sudo apt-get update -qq
+          # automake/libltdl-dev/libtool-bin несут макросы libtool. Без них
+          # libffi падает на `configure.ac:215: possibly undefined macro:
+          # LT_SYS_SYMBOL_USCORE`, и это единственная строка про причину на
+          # четыре тысячи строк лога.
           sudo apt-get install -y -qq git zip unzip openjdk-17-jdk \
-            autoconf libtool pkg-config zlib1g-dev libncurses-dev \
+            autoconf automake libtool libtool-bin libltdl-dev m4 \
+            pkg-config zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev
           python -m pip install --upgrade pip
           python -m pip install buildozer cython==0.29.36
