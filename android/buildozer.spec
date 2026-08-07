@@ -26,6 +26,13 @@ android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 
+# python-for-android берётся выпуском, а не master. master строит
+# hostpython 3.14, и вложенный в неё pip падает на импорте
+# BuildDependencyInstallError — сборка умирает через восемнадцать
+# минут, дойдя до компиляции Kivy. v2026.05.09 вышел за два дня до
+# buildozer 1.6.0: это пара, которую собирали вместе.
+p4a.branch = v2026.05.09
+
 [buildozer]
 log_level = 2
 warn_on_root = 0
