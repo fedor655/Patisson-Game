@@ -40,6 +40,11 @@ class FarmLink:
         self.clock: dict = {}
         self.players: list = []
         self.scarecrow = 1.0
+        self.crow_ok = True          # пугало ещё пугает
+        self.crow_fix = False        # и чинить его пока нечего
+        # Амбар на общей ферме тоже общий: семена, которые тут
+        # показаны, мог посадить кто-то другой минуту назад.
+        self.inventory: dict = {}
         self.lines: list[str] = []
 
         self._sock: socket.socket | None = None
@@ -80,6 +85,9 @@ class FarmLink:
                 self.clock = world.get("clock") or {}
                 self.players = world.get("players") or []
                 self.scarecrow = world.get("scarecrow", 1.0)
+                self.crow_ok = bool(world.get("crow_ok", True))
+                self.crow_fix = bool(world.get("crow_fix", False))
+                self.inventory = dict(world.get("inventory") or {})
             elif kind == "state":
                 for plot in message.get("plots", []):
                     self.plots[plot["i"]] = plot
@@ -87,6 +95,11 @@ class FarmLink:
                 self.clock = message.get("clock") or self.clock
                 self.players = message.get("players") or self.players
                 self.scarecrow = message.get("scarecrow", self.scarecrow)
+                self.crow_ok = bool(message.get("crow_ok", self.crow_ok))
+                self.crow_fix = bool(message.get("crow_fix",
+                                                 self.crow_fix))
+                if isinstance(message.get("inv"), dict):
+                    self.inventory = dict(message["inv"])
             elif kind == "event":
                 fresh.extend(message.get("lines", []))
             elif kind == "bye":

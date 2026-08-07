@@ -73,8 +73,18 @@ class Scarecrow:
         rate = SCARECROW_WEAR_PER_DAY + (SCARECROW_RAIN_EXTRA if raining else 0.0)
         self.condition = max(0.0, self.condition - day_frac * rate)
 
+    @property
+    def needs_repair(self) -> bool:
+        """Worth walking over to — `repair` refuses anything better.
+
+        A property rather than a number copied into whoever is asking:
+        the phone draws a button from this, the game refuses a press from
+        it, and the two must not be able to disagree.
+        """
+        return self.condition <= 0.95
+
     def repair(self) -> bool:
-        if self.condition > 0.95:
+        if not self.needs_repair:
             return False
         self.condition = 1.0
         return True

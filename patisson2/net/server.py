@@ -69,6 +69,7 @@ class FarmServer:
         self.save_path = Path(save_path) if save_path else DEFAULT_SAVE
         self._last_save = time.monotonic()
         self._last_plots: list[dict] = []
+        self._last_inventory: dict = {}
         self._pending: list[str] = []
         # People leave crops in the ground and expect to find them there
         # next week. Writing the world without reading it back would hand
@@ -98,8 +99,20 @@ class FarmServer:
             "coins": st.coins,
             "inventory": dict(st.inventory),
             "players": [p.as_dict() for p in self.players.values()],
-            "scarecrow": round(self.world.pests.scarecrow.condition, 2),
+            **self.crow_dict(),
         }
+
+    def crow_dict(self) -> dict:
+        """The scarecrow, as two questions a client cannot get wrong.
+
+        The number alone left everyone to invent their own idea of
+        "needs mending", and the phone's idea would drift from the rule
+        the server actually applies when the button is pressed.
+        """
+        crow = self.world.pests.scarecrow
+        return {"scarecrow": round(crow.condition, 2),
+                "crow_ok": bool(crow.working),
+                "crow_fix": bool(crow.needs_repair)}
 
     def clock_dict(self) -> dict:
         c = self.world.cycle
@@ -123,7 +136,16 @@ class FarmServer:
         changes["clock"] = self.clock_dict()
         changes["coins"] = self.world.state.coins
         changes["players"] = [p.as_dict() for p in self.players.values()]
-        changes["scarecrow"] = round(self.world.pests.scarecrow.condition, 2)
+        changes.update(self.crow_dict())
+        # The barn is shared, so it is the farm's business what is in it.
+        # It was sent once, at the door, and never again: every client
+        # then showed the stock it had joined with, and a player could
+        # look at three seeds that had been planted by somebody else an
+        # hour ago. It moves rarely, so it is sent when it moves.
+        inventory = dict(self.world.state.inventory)
+        if inventory != self._last_inventory:
+            changes["inv"] = inventory
+            self._last_inventory = inventory
         return changes
 
     # -------------------------------------------------------------- actions
@@ -297,6 +319,7 @@ class FarmServer:
             return False
         self.world.from_dict(data)
         self._last_plots = []          # everyone gets a full snapshot
+        self._last_inventory = {}
         print(f"мир загружен: день {self.world.cycle.day + 1}, "
               f"{self.world.state.coins} мон.", flush=True)
         return True

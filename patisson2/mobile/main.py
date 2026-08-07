@@ -211,6 +211,14 @@ class PatissonMobile(App):
                           font_size=14, color=(0.85, 0.9, 0.8, 1))
         root.add_widget(self.news)
 
+        # Что лежит в общем амбаре. Без этого «Удобрить» и «Семена»
+        # были кнопками, которые иногда молча ничего не делают: ферма
+        # отказывает, когда класть в землю нечего, и сказать об этом
+        # некому.
+        self.barn = Label(text="", size_hint=(1, None), height=30,
+                          font_size=14, color=(0.75, 0.78, 0.72, 1))
+        root.add_widget(self.barn)
+
         # Два ряда: чем работать по грядке, и что делать со всей фермой.
         tools_bar = BoxLayout(size_hint=(1, None), height=58, spacing=3,
                               padding=3)
@@ -253,7 +261,30 @@ class PatissonMobile(App):
 
     def next_crop(self):
         self.view.crop = (self.view.crop + 1) % len(CROPS)
-        self.crop_button.text = CROP_NAMES[CROPS[self.view.crop]]
+        self._refresh_barn()
+
+    def _refresh_barn(self):
+        """Семена выбранной культуры, удобрение, зола и пугало."""
+        stock = self.link.inventory
+        crop = CROPS[self.view.crop]
+        seeds = int(stock.get("seed_" + crop, 0))
+        self.crop_button.text = f"{CROP_NAMES[crop]} x{seeds}"
+        self.crop_button.color = ((1, 1, 1, 1) if seeds
+                                  else (1.0, 0.6, 0.5, 1))
+        self.barn.text = (f"Амбар: удобрение {int(stock.get('fertilizer', 0))}"
+                          f"   зола {int(stock.get('ash', 0))}"
+                          f"   пугало {self.link.scarecrow * 100:.0f}%")
+        # Три состояния, и все три решает ферма: чинить нечего,
+        # потрёпано, или вороны уже не боятся.
+        if not self.link.crow_ok:
+            self.scare_button.text = "Пугало упало"
+            self.scare_button.color = (1.0, 0.55, 0.45, 1)
+        elif self.link.crow_fix:
+            self.scare_button.text = "Пугало потрёпано"
+            self.scare_button.color = (1.0, 0.87, 0.5, 1)
+        else:
+            self.scare_button.text = "Пугало цело"
+            self.scare_button.color = (1, 1, 1, 1)
 
     def reconnect(self):
         """Свежая попытка дозвониться до той же фермы."""
@@ -288,6 +319,7 @@ class PatissonMobile(App):
                             f"{weather}   {self.link.coins} мон.")
         if fresh:
             self.news.text = fresh[-1]
+        self._refresh_barn()
         self.view.redraw()
 
     def on_stop(self):

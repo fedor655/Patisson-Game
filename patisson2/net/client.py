@@ -172,6 +172,18 @@ def apply_state(farm, message: dict, state=None, cycle=None) -> None:
 
     if state is not None and "coins" in message:
         state.coins = int(message["coins"])
+    if state is not None:
+        # The barn belongs to the farm. Without this the toolbar counted
+        # the seeds this machine happened to have — so it could offer
+        # "Патиссон x3" on a farm whose last patisson seed went into the
+        # ground an hour ago, and the press would be refused with no
+        # explanation. The server sends the barn only when it changes.
+        stock = message.get("inv")
+        if stock is None:
+            stock = message.get("inventory")
+        if isinstance(stock, dict):
+            state.inventory = {str(k): int(v) for k, v in stock.items()
+                               if isinstance(v, (int, float))}
     clock = message.get("clock")
     if cycle is not None and isinstance(clock, dict):
         # The farm's clock belongs to the server too, or two players would

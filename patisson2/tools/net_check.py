@@ -278,6 +278,43 @@ async def check_phone(server, port: int) -> list[str]:
         await asyncio.sleep(0.02)
     if server.world.farm.plots[7].water <= 0.0:
         problems.append("ферма не получила полив с телефона")
+
+    # Амбар на общей ферме общий, и телефон должен видеть именно его:
+    # без этого «Семена» и «Удобрить» — кнопки, которые иногда молча
+    # ничего не делают, потому что класть в землю нечего.
+    server.world.state.inventory["seed_wheat"] = 7
+    server.world.state.inventory["fertilizer"] = 3
+    for _ in range(60):
+        phone.pump()
+        if phone.inventory.get("seed_wheat") == 7:
+            break
+        await asyncio.sleep(0.02)
+    if phone.inventory.get("seed_wheat") != 7:
+        problems.append(f"телефон не увидел амбар фермы: "
+                        f"{phone.inventory}")
+    if phone.inventory.get("fertilizer") != 3:
+        problems.append("телефон не увидел удобрение")
+
+    # Состояние пугала решает ферма — телефон только рисует ответ.
+    crow = server.world.pests.scarecrow
+    crow.condition = 1.0
+    for _ in range(60):
+        phone.pump()
+        if not phone.crow_fix:
+            break
+        await asyncio.sleep(0.02)
+    if phone.crow_fix or not phone.crow_ok:
+        problems.append("целое пугало телефон считает сломанным")
+    crow.condition = 0.1
+    for _ in range(60):
+        phone.pump()
+        if not phone.crow_ok:
+            break
+        await asyncio.sleep(0.02)
+    if phone.crow_ok or not phone.crow_fix:
+        problems.append("упавшее пугало телефон считает целым "
+                        f"({phone.scarecrow})")
+    crow.condition = 1.0
     if phone.clock.get("season") is None:
         problems.append("на телефон не пришли часы фермы")
     phone.close()

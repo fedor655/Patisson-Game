@@ -1635,6 +1635,47 @@ def run() -> int:
         assert not bad, "; ".join(bad)
     check("двое на одной грядке", two_hands_on_one_bed)
 
+    def the_farm_answers_for_its_barn_and_its_scarecrow():
+        """Клиент показывает ферму, а не то, с чем он к ней пришёл.
+
+        Амбар уходил один раз, в дверях, и больше никогда: каждый клиент
+        показывал запас на момент подключения, и можно было смотреть на
+        три семечка, посаженных кем-то другим час назад. Пугало уходило
+        числом — и каждый сам решал, что такое «пора чинить», а ферма при
+        нажатии применяла своё правило.
+        """
+        from ..net.server import FarmServer
+
+        bad = []
+        server = FarmServer(save_path=None)
+        server.world.state.inventory = {"seed_wheat": 4}
+        first = server.deltas()
+        if first.get("inv", {}).get("seed_wheat") != 4:
+            bad.append(f"в первом сообщении нет амбара: {first.get('inv')}")
+        if "inv" in server.deltas():
+            bad.append("амбар шлётся каждый тик, хотя не менялся")
+        server.world.state.give("seed_wheat", 2)
+        after = server.deltas()
+        if after.get("inv", {}).get("seed_wheat") != 6:
+            bad.append(f"изменение амбара не доехало: {after.get('inv')}")
+
+        # Кнопка на телефоне и отказ фермы — это должен быть один факт.
+        crow = server.world.pests.scarecrow
+        for condition in (1.0, 0.96, 0.95, 0.5, 0.0):
+            crow.condition = condition
+            said = server.crow_dict()
+            if said["crow_ok"] != crow.working:
+                bad.append(f"при {condition}: пугало пугает {crow.working}, "
+                           f"а сказано {said['crow_ok']}")
+            crow.condition = condition
+            did = crow.repair()
+            if said["crow_fix"] != did:
+                bad.append(f"при {condition}: кнопка говорит "
+                           f"{said['crow_fix']}, ферма отвечает {did}")
+        assert not bad, "; ".join(bad)
+    check("амбар и пугало — дело фермы",
+          the_farm_answers_for_its_barn_and_its_scarecrow)
+
     def joining_a_farm_works_from_the_game(self=None):
         """The game itself must be able to join a farm and show the others.
 
@@ -1826,6 +1867,22 @@ def run() -> int:
             assert server.world.state.count("fertilizer") == 1, \
                 ("ферма не списала удобрение: "
                  f"{server.world.state.count('fertilizer')}")
+
+            # Панель инструментов должна считать семена фермы, а не свои.
+            # Иначе она предлагает «Патиссон x3» на ферме, где последнее
+            # семечко ушло в землю час назад, и нажатие отклоняется молча.
+            from ..game.farming import CROP_ORDER
+            st.seed_index = CROP_ORDER.index("patisson")
+            server.world.state.inventory["seed_patisson"] = 9
+            for _ in range(120):
+                app.taskMgr.step()
+                if st.count("seed_patisson") == 9:
+                    break
+            assert st.count("seed_patisson") == 9, \
+                f"в игре семян {st.count('seed_patisson')}, на ферме 9"
+            app.hud.update(app.cycle, st, app.weather)
+            shown = app.hud.tool_labels[2].getText()
+            assert "x9" in shown, f"на панели не запас фермы: {shown!r}"
 
             # And the local clock is the server's, not ours.
             before = app.cycle.total_time
