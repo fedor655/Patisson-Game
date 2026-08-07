@@ -402,6 +402,44 @@ def run() -> int:
                 f"{season_days} дн.")
     check("у каждой культуры своя ниша", no_crop_is_dominated)
 
+    def the_almanac_does_not_promise_exclusivity():
+        """Список сезонов читается как «больше нигде», а это неправда.
+
+        Вне своего сезона культура растёт медленнее в 3,6 раза, а рыба
+        клюёт реже в 2,9 — но не исчезают ни та, ни другая. Игрок,
+        посадивший пшеницу зимой, узнавал об этом только ожиданием:
+        2,3 дня в справочнике против 8,3 на грядке. Числа у игры есть, и
+        страница обязана их назвать.
+        """
+        from ..game.farming import CROPS, CROP_ORDER, days_to_ripe
+        from ..game.fishing import SPECIES
+        from ..world.daynight import SEASONS
+
+        bad = []
+        was = app.hud.journal_page
+        try:
+            app.hud.journal_page = 1
+            left, right = app.hud._journal_almanac()
+            page = "\n".join(left)
+            fish_page = "\n".join(right)
+            for key in CROP_ORDER:
+                crop = CROPS[key]
+                if len(crop.seasons) >= len(SEASONS):
+                    continue
+                want = f"вне сезона {days_to_ripe(crop, in_season=False):.1f}"
+                if want not in page:
+                    bad.append(f"{crop.name}: нет «{want}» в справочнике")
+            picky = [s for s in SPECIES
+                     if s.key != "boot" and 0 < len(s.seasons) < len(SEASONS)]
+            assert picky, "нет рыбы со своим сезоном — проверка пуста"
+            if "реже" not in fish_page:
+                bad.append("про рыбу вне сезона страница молчит")
+        finally:
+            app.hud.journal_page = was
+        assert not bad, "; ".join(bad)
+    check("справочник не обещает исключительности",
+          the_almanac_does_not_promise_exclusivity)
+
     def crops_are_spoken_of_correctly():
         """«Морковь созрел» игрок читал каждый день целый год.
 

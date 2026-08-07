@@ -283,8 +283,13 @@ class HUD:
 
     def _journal_almanac(self):
         """What grows when, and what bites when — the data the game already has."""
+        from ..game.farming import days_to_ripe as _ripe
+        from ..game.fishing import OFF_SEASON as FISH_OFF
         from ..game.fishing import SPECIES
         from ..world.daynight import SEASONS
+
+        def off_season(crop):
+            return _ripe(crop, in_season=False)
         left = ["КУЛЬТУРЫ", ""]
         for key in CROP_ORDER:
             crop = CROPS[key]
@@ -299,6 +304,12 @@ class HUD:
             left.append(f"      {seasons} · урожай {crop.yield_count}")
             left.append(f"      растёт {plain:.1f} дн. · "
                         f"с удобрением {fed:.1f}")
+            # Список сезонов читается как «больше нигде», а это неправда:
+            # вне сезона культура растёт медленнее, но растёт. Пшеница
+            # зимой вызревает за 8.3 дня вместо 2.3 — и игрок, посадивший
+            # её не вовремя, до сих пор узнавал об этом только ожиданием.
+            if len(crop.seasons) < len(SEASONS):
+                left.append(f"      вне сезона {off_season(crop):.1f} дн.")
             left.append("")
         # The one trick the game never told: feed once, right before the
         # harvest. The threshold is quoted from the same constant harvest()
@@ -318,6 +329,8 @@ class HUD:
             seasons = ", ".join(SEASONS[s] for s in sp.seasons) or "круглый год"
             mark = MARK if self.state.fish_log.get(sp.key) else " "
             right.append(f" [{mark}] {sp.name} — {sp.price} мон./кг")
+            if sp.seasons and len(sp.seasons) < len(SEASONS):
+                seasons += f" (в прочие в {1 / FISH_OFF:.0f} раза реже)"
             right.append(f"      {sp.size[0]:.1f}–{sp.size[1]:.1f} кг · {seasons}")
             right.append(f"      {when} · подсечек {sp.pulls}")
         return left, right

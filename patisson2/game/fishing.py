@@ -47,6 +47,11 @@ SPECIES: tuple[Species, ...] = (
 
 BY_KEY = {s.key: s for s in SPECIES}
 
+# Насколько реже клюёт рыба вне своего сезона. Не ноль: в справочнике
+# перечисление сезонов читается как «в остальные не клюёт», и это
+# неправда — поэтому число названо, и справочник берёт его отсюда.
+OFF_SEASON = 0.35
+
 
 def _hour_active(species: Species, hour: float) -> bool:
     if not species.hours:
@@ -68,7 +73,7 @@ def roll_species(hour: float, season: int, luck: float,
         elif s.hours:
             w *= 0.28
         if s.seasons and season not in s.seasons:
-            w *= 0.35
+            w *= OFF_SEASON
         # Luck lifts the rare end and trims the junk.
         if s.weight <= 8 and s.key != "boot":
             w *= 1.0 + luck

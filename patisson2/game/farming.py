@@ -153,6 +153,12 @@ BLIGHT_DAILY_CHANCE = 0.55  # per in-game day, per susceptible plot
 # extra is granted when the bed is this healthy and this well fed at the
 # moment of harvest. Topping the bed up all season loses money — the
 # almanac and Богдан both say so, quoting these numbers.
+# Во сколько раз медленнее растёт культура вне своего сезона. Не ноль,
+# и справочник обязан это сказать: список сезонов читается как «больше
+# нигде», а на деле пшеница зимой всё-таки вызревает — за 8,3 дня
+# вместо 2,3.
+OFF_SEASON = 0.28
+
 BONUS_HEALTH = 0.92
 BONUS_FOOD = 0.6
 
@@ -182,7 +188,7 @@ def growth_rate(crop: Crop, water: float, food: float, weeds: float,
     """
     rate = 1.0 / crop.grow_days
     if not in_season:
-        rate *= 0.28          # out of season: slow, not impossible
+        rate *= OFF_SEASON    # out of season: slow, not impossible
     rate *= 0.75 + 0.25 * water
     # Starved: a little over half speed. Fed: full speed and the extra
     # fruit at harvest.
