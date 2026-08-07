@@ -61,9 +61,14 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
         sky = app.cycle.state()
         app.pipeline._exposure = sky.exposure
         settle(5)
-        path = out_dir / name
+        # Written as .jpg, which is what the repository and the README
+        # actually carry. This wrote .png and nothing converted them, so
+        # "regenerate the screenshots" left every committed picture
+        # exactly as it was and quietly dropped 33 untracked files
+        # beside them.
+        path = (out_dir / name).with_suffix(".jpg")
         ok = app.win.saveScreenshot(Filename.fromOsSpecific(str(path)))
-        print(f"[shot] {name} -> {ok}", flush=True)
+        print(f"[shot] {path.name} -> {ok}", flush=True)
 
     settle(8)
 
@@ -104,7 +109,8 @@ def capture(out_dir: Path = DEFAULT_OUT, width: int = 1600, height: int = 900):
 
     # 2. Grow the crops so the plots are worth looking at.
     for i, plot in enumerate(app.farm.plots):
-        crop = ("patisson", "patisson", "carrot", "tomato", "wheat", "patisson")[i % 6]
+        crop = ("patisson", "turnip", "carrot", "tomato",
+                "wheat", "patisson")[i % 6]
         app.farm.plant(plot, crop)
         plot.progress = min(1.0, 0.30 + (i % 7) * 0.12)
         plot.water = 0.8

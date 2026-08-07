@@ -178,6 +178,36 @@ def make_carrot():
             Part(tops, "tops", roughness=0.82, double_sided=True)]
 
 
+def make_turnip():
+    """Репа: приземистый белый корень с фиолетовыми плечами и ботвой.
+
+    Единственное, что вызревает зимой. Форма нарочно не морковкина —
+    сверху грядки видно только плечи и листья, и по ним надо узнавать
+    культуру, не подходя вплотную.
+    """
+    body = Mesh()
+    profile = [(0.001, -0.13)]                 # хвостик корня уходит вниз
+    for i in range(1, 12):
+        t = i / 11
+        profile.append((0.105 * math.sin(t * math.pi) ** 0.60,
+                        -0.13 + t * 0.26))
+    body.extend(revolve(profile, 14, srgb(240, 236, 226)).smooth(70))
+    # Плечи — то, что торчит из земли и выдаёт репу издалека.
+    shoulders = sphere(0.097, srgb(154, 104, 168), squash=0.5)
+    shoulders.translate(0, 0, 0.075)
+    tops = Mesh()
+    r = _rng(47)
+    for i in range(6):
+        ang = 360 * i / 6 + r.uniform(-24, 24)
+        lf = leaf(0.17, 0.115, LEAF_G if i % 2 else LEAF_DARK,
+                  curl=-0.30, segments=5)
+        lf.rotate_y(-52 - r.uniform(0, 18)).rotate_z(ang).translate(0, 0, 0.11)
+        tops.extend(lf)
+    return [Part(body, "turnip", roughness=0.58),
+            Part(shoulders, "shoulders", roughness=0.55),
+            Part(tops, "tops", roughness=0.82, double_sided=True)]
+
+
 def make_tomato_bush():
     stems = Mesh()
     fruit = Mesh()
@@ -1297,6 +1327,7 @@ MODELS = {
     "patisson_2": lambda: make_patisson(2),
     "patisson_3": lambda: make_patisson(3),
     "carrot": make_carrot,
+    "turnip": make_turnip,
     "tomato": make_tomato_bush,
     "wheat": make_wheat,
     "pumpkin": make_pumpkin,

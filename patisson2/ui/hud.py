@@ -18,6 +18,12 @@ JOURNAL_PAGES = ("задания", "справочник", "статистика
 MARK = "x"
 
 
+# Где начинается и где обязан кончиться текст журнала: подсказка внизу
+# страницы стоит на -0.64, и налезать на неё нельзя.
+JOURNAL_TOP = 0.50
+JOURNAL_FLOOR = -0.60
+
+
 def fit_text(button, max_width: float, start: float, floor: float = 0.028):
     """Shrink a button's text until it fits inside the button.
 
@@ -489,14 +495,21 @@ class HUD:
                        self._journal_stats)[self.journal_page]
             left, right = builder()
             stats = self.journal_page == 2
-            scale = 0.045 if stats else 0.036   # statistics is a short page
             split = -0.30 if stats else 0.04
-            self.panel_body.setScale(scale)
-            self.panel_body.setPos(-0.95, 0.50)
             self.panel_body.setText("\n".join(left))
-            self.panel_body2.setScale(scale)
-            self.panel_body2.setPos(split, 0.50)
             self.panel_body2.setText("\n".join(right))
+            # The scale follows the longest column instead of being a
+            # constant: a sixth crop pushed the almanac past the bottom of
+            # its panel and straight through the hint line. Line height
+            # comes from the font, not from a guess about it.
+            rows = max(len(left), len(right), 1)
+            line = self.panel_body.textNode.getLineHeight() or 1.0
+            scale = min(0.045 if stats else 0.036,
+                        (JOURNAL_TOP - JOURNAL_FLOOR) / (line * rows))
+            self.panel_body.setScale(scale)
+            self.panel_body.setPos(-0.95, JOURNAL_TOP)
+            self.panel_body2.setScale(scale)
+            self.panel_body2.setPos(split, JOURNAL_TOP)
             self.panel_body2.show()
             self.panel_hint.setText("←→ — раздел · J или Esc — закрыть")
         elif self.panel_mode == "pause":

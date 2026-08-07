@@ -361,7 +361,12 @@ def run() -> int:
             crop = CROPS[key]
             days = days_to_ripe(crop)
             profit = crop.yield_count * crop.sell_price - crop.seed_price
-            stats[key] = (profit / days, days, len(crop.seasons) or 4)
+            # Множество сезонов, а не их число: культуры, которые растут в
+            # разное время, вообще не конкурируют. По счёту морковь
+            # «побеждала» репу — три сезона против одного, — хотя зимой,
+            # где репа и растёт, морковь тянется десять дней вместо трёх.
+            stats[key] = (profit / days, days,
+                          set(crop.seasons) or {0, 1, 2, 3})
             assert profit > 0, \
                 f"{crop.name}: семена дороже урожая ({crop.seed_price} " \
                 f"против {crop.yield_count * crop.sell_price})"
@@ -372,13 +377,117 @@ def run() -> int:
                 if a == b:
                     continue
                 pb, db, sb = stats[b]
-                if pb >= pa and db <= da and sb >= sa:
+                if pb >= pa and db <= da and sa <= sb:
                     assert False, (
                         f"{CROPS[a].name} незачем сажать: {CROPS[b].name} "
                         f"лучше по всем осям — {pb:.1f} против {pa:.1f} "
                         f"мон./день, {db:.1f} против {da:.1f} дн., "
-                        f"{sb} против {sa} сезонов")
+                        f"сезоны {sorted(sb)} против {sorted(sa)}")
+
+        # И у каждого сезона должно быть, что в нём растить. Зима была
+        # пустой четвертью года: самая быстрая культура тянулась в ней
+        # 8.3 дня при семидневной зиме, то есть ничего, посаженного
+        # зимой, зимой же и не вызревало.
+        from ..config import Config
+        from ..world.daynight import SEASONS
+
+        season_days = Config().game.season_days
+        for season in range(4):
+            fits = [CROPS[k].name for k in CROP_ORDER
+                    if season in CROPS[k].seasons
+                    and days_to_ripe(CROPS[k]) <= season_days]
+            assert fits, (
+                f"в сезон «{SEASONS[season]}» нечего сажать: ни одна "
+                f"культура не растёт в нём и не успевает за "
+                f"{season_days} дн.")
     check("у каждой культуры своя ниша", no_crop_is_dominated)
+
+    def screenshots_are_the_ones_the_tool_makes():
+        """Снимки в репозитории должны быть теми, что делает инструмент.
+
+        shots.py писал .png, а репозиторий и README несут .jpg. Значит
+        «пересними скриншоты» не обновляло ни одной картинки в репозитории
+        и молча клало рядом три десятка неотслеживаемых файлов — а на
+        снимках всё это время был мир, которого в игре уже нет.
+        """
+        import re
+        import subprocess
+
+        root = Path(__file__).resolve().parents[2]
+        bad = []
+        source = (root / "patisson2" / "tools" / "shots.py").read_text(
+            encoding="utf-8")
+        names = re.findall(r'shot\(\s*"([^"]+)"', source)
+        assert len(names) >= 20, \
+            f"в shots.py нашлось всего {len(names)} снимков — разбор сломался"
+        tracked = set(subprocess.run(
+            ["git", "ls-files", "screenshots2", "media"], cwd=str(root),
+            capture_output=True, text=True, timeout=120).stdout.split())
+        assert tracked, "git не отдал список файлов — проверка бы прошла впустую"
+        for name in names:
+            want = f"screenshots2/{Path(name).with_suffix('.jpg').name}"
+            if want not in tracked:
+                bad.append(f"{want} инструмент делает, а репозиторий не хранит")
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        links = re.findall(r"\]\((screenshots2/[^)]+|media/[^)]+)\)", readme)
+        assert links, "в README не нашлось ссылок на картинки"
+        for link in links:
+            if not (root / link).exists():
+                bad.append(f"README ссылается на несуществующий {link}")
+
+        # И то, что инструмент оставил на диске, должно быть тем, что
+        # репозиторий хранит. Одних имён мало: пока shots.py писал .png,
+        # имена совпадали (расширение подменялось прямо здесь), а рядом
+        # копились три десятка файлов, которых git не видел.
+        strays = [line[3:] for line in subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all",
+             "screenshots2", "media"], cwd=str(root),
+            capture_output=True, text=True, timeout=120).stdout.splitlines()
+            if line.startswith("??")]
+        if strays:
+            bad.append("инструмент оставил файлы мимо репозитория: "
+                       + ", ".join(sorted(strays)[:6]))
+        assert not bad, "; ".join(bad)
+    check("снимки те, что делает инструмент",
+          screenshots_are_the_ones_the_tool_makes)
+
+    def journal_pages_stay_inside_their_panel():
+        """Ни одна страница журнала не должна налезать на подсказку внизу.
+
+        Шестая культура удлинила справочник на четыре строки, и он поехал
+        за нижний край панели прямо через строку «←→ — раздел». Масштаб
+        был константой; теперь он выводится из числа строк и высоты
+        строки шрифта, а это проверяет результат.
+        """
+        from ..ui.hud import JOURNAL_FLOOR, JOURNAL_PAGES
+
+        bad = []
+        was_page, was_mode = app.hud.journal_page, app.hud.panel_mode
+        try:
+            app.hud.open_panel("journal")
+            for page in range(len(JOURNAL_PAGES)):
+                app.hud.journal_page = page
+                app.hud.refresh_panel()
+                app.taskMgr.step()
+                for side, node in (("слева", app.hud.panel_body),
+                                   ("справа", app.hud.panel_body2)):
+                    # getNumRows, а не len(строк): перенос длинной строки
+                    # добавляет ряды, которых в списке нет.
+                    rows = node.textNode.getNumRows()
+                    line = node.textNode.getLineHeight()
+                    scale = node.getScale()[0]
+                    # OnscreenText.getPos() отдаёт (x, z), не (x, y).
+                    bottom = node.getPos()[1] - line * rows * scale
+                    if bottom < JOURNAL_FLOOR - 1e-6:
+                        bad.append(
+                            f"«{JOURNAL_PAGES[page]}» {side}: {rows} строк "
+                            f"кончаются на {bottom:.3f} ниже {JOURNAL_FLOOR}")
+        finally:
+            app.hud.journal_page, app.hud.panel_mode = was_page, was_mode
+            app.hud.close_panel()
+        assert not bad, "; ".join(bad)
+    check("страницы журнала помещаются",
+          journal_pages_stay_inside_their_panel)
 
     def scarecrow_guards_the_garden():
         """A working scarecrow must cover every bed, and a broken one none.

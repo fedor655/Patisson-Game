@@ -63,13 +63,24 @@ CROPS: dict[str, Crop] = {
         (("patisson_0", 0.8), ("wheat", 0.55), ("wheat", 1.0)),
         grow_days=1.2, seed_price=3, sell_price=6, seasons=(0, 1, 2), thirst=0.7,
         yield_count=3),
+    # Единственное, что вызревает зимой. Числа выведены, а не
+    # выдуманы: 1.6 даёт 3.1 дня до спелости, то есть два урожая
+    # укладываются в семидневную зиму; 9 монет за корень при двух
+    # корнях с грядки — это 4.6 монеты в день против 6.6 у самой
+    # слабой летней культуры. Зима худая, но не пустая.
+    "turnip": Crop(
+        "turnip", "Репа",
+        (("patisson_0", 0.7), ("turnip", 0.55), ("turnip", 1.0)),
+        grow_days=1.6, seed_price=4, sell_price=9, seasons=(3,),
+        thirst=0.7, yield_count=2),
     "pumpkin": Crop(
         "pumpkin", "Тыква",
         (("patisson_0", 1.1), ("pumpkin", 0.42), ("pumpkin", 0.72), ("pumpkin", 1.0)),
         grow_days=3.5, seed_price=16, sell_price=88, seasons=(2,), thirst=1.4),
 }
 
-CROP_ORDER = ("patisson", "carrot", "tomato", "wheat", "pumpkin")
+CROP_ORDER = ("patisson", "carrot", "tomato", "wheat", "pumpkin",
+               "turnip")
 
 # What one action gives a bed, and what a bed loses on its own.
 WATER_AMOUNT = 0.55         # one pour from the can

@@ -39,9 +39,11 @@ TOOLS = [
     ("basket", "Корзина", "harvest"),
     ("fert", "Удобрить", "feed"),
 ]
-CROPS = ["patisson", "carrot", "tomato", "wheat", "pumpkin"]
+CROPS = ["patisson", "carrot", "tomato", "wheat", "pumpkin",
+         "turnip"]
 CROP_NAMES = {"patisson": "Патиссон", "carrot": "Морковь", "tomato": "Томат",
-              "wheat": "Пшеница", "pumpkin": "Тыква"}
+              "wheat": "Пшеница", "pumpkin": "Тыква",
+              "turnip": "Репа"}
 SEASONS = ["Весна", "Лето", "Осень", "Зима"]
 # Сколько ждать перед новой попыткой дозвониться.
 RETRY_SECONDS = 5.0
