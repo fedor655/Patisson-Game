@@ -402,6 +402,73 @@ def run() -> int:
                 f"{season_days} дн.")
     check("у каждой культуры своя ниша", no_crop_is_dominated)
 
+    def the_stall_keeps_offering_work():
+        """Девять заданий кончались за год, и брать становилось нечего.
+
+        Игра теперь продолжается после итогов года, а взять было нечего:
+        девять заданий закрываются и всё. Стойка выдаёт заказ на место
+        закрытого — из того, что ферма умеет, и стоимостью примерно с
+        медианную награду тех девяти.
+        """
+        from ..game.state import (COMMISSION_KEY, COMMISSION_MAX,
+                                  COMMISSION_WORTH, GameState, plural)
+
+        bad = []
+        # Число в заказе должно согласовываться: «4 рыб» — та же беда,
+        # что «Морковь созрел», только про число вместо рода.
+        for n, want in ((1, "рыба"), (2, "рыбы"), (4, "рыбы"), (5, "рыб"),
+                        (11, "рыб"), (14, "рыб"), (21, "рыба"), (22, "рыбы")):
+            got = plural(n, "рыба", "рыбы", "рыб")
+            if got != want:
+                bad.append(f"{n} {got} вместо «{n} {want}»")
+
+        fresh = GameState(app.cfg.game)
+        opening = len(fresh.quests)
+        seen_titles, rewards = [], []
+        for _ in range(6):
+            for q in fresh.quests:
+                q.done = True
+            fresh.check_quests()
+            job = fresh.quests[-1]
+            seen_titles.append(job.title)
+            rewards.append(job.reward)
+            if not job.key.startswith(COMMISSION_KEY):
+                bad.append(f"после всех заданий стойка молчит: {job.key}")
+                break
+            if not job.detail or not job.goal:
+                bad.append(f"пустой заказ: {job.title!r} {job.detail!r}")
+            if job.goal > COMMISSION_MAX:
+                bad.append(f"заказ просит {job.goal} — больше {COMMISSION_MAX}")
+            if len(fresh.quests) != opening + 1:
+                bad.append(f"список заданий разросся до {len(fresh.quests)}")
+        if len(set(seen_titles)) != len(seen_titles):
+            bad.append(f"номера заказов повторяются: {seen_titles}")
+        if rewards and not all(0.4 * COMMISSION_WORTH <= r <= 2.2 * COMMISSION_WORTH
+                               for r in rewards):
+            bad.append(f"награды за заказ вне полосы: {rewards}")
+
+        # И заказ обязан пережить сохранение: в списке по умолчанию его
+        # нет, а загрузка ищет задания по ключу — незнакомый ключ молча
+        # выпадал бы, и стойка каждый раз начинала бы с первого номера.
+        again = GameState(app.cfg.game)
+        again.from_dict(fresh.to_dict())
+        keys = [q.key for q in again.quests]
+        if fresh.quests[-1].key not in keys:
+            bad.append(f"заказ не пережил сохранение: {keys[-2:]}")
+        else:
+            restored = next(q for q in again.quests
+                            if q.key == fresh.quests[-1].key)
+            if (restored.goal, restored.reward, restored.detail) != (
+                    fresh.quests[-1].goal, fresh.quests[-1].reward,
+                    fresh.quests[-1].detail):
+                bad.append("заказ загрузился, но другим")
+        if again.commissions_done != fresh.commissions_done:
+            bad.append(f"счёт заказов не сохранился: "
+                       f"{again.commissions_done} против "
+                       f"{fresh.commissions_done}")
+        assert not bad, "; ".join(bad)
+    check("стойка не остаётся без работы", the_stall_keeps_offering_work)
+
     def the_almanac_does_not_promise_exclusivity():
         """Список сезонов читается как «больше нигде», а это неправда.
 

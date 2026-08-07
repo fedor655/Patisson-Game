@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -256,7 +257,6 @@ class Quest:
     target: str = ""
     progress: int = 0
     done: bool = False
-    claimed: bool = False
 
 
 def default_quests() -> list[Quest]:
@@ -287,6 +287,77 @@ def default_quests() -> list[Quest]:
         Quest("baker", "Кондитер",
               "Испеките тыквенный пирог.", 1, 400, "cook", "pie"),
     ]
+
+
+# --- заказы со стойки --------------------------------------------------------
+# Девять заданий закрываются за год, и дальше игроку нечего было брать —
+# а игра теперь продолжается после итогов года. Стойка даёт заказ, и на
+# место закрытого приходит следующий.
+#
+# Ничего здесь не выбрано на глаз. Заказ стоит примерно столько же,
+# сколько среднее из девяти заданий (медиана их наград — 150 монет), а
+# сколько именно просят — следует из того, чего это стоит на рынке.
+# Поэтому три патиссона и двенадцать морковок — один и тот же заказ.
+COMMISSION_KEY = "commission"
+COMMISSION_WORTH = 150       # медиана наград девяти заданий
+COMMISSION_MAX = 12          # и не больше, чем просит самое большое из них
+
+
+def plural(n: int, one: str, few: str, many: str) -> str:
+    """Русское согласование числа: 1 рыба, 2 рыбы, 5 рыб.
+
+    Заказ говорит «Поймайте 4 рыб», если этого не сделать, — та же
+    беда, что «Морковь созрел», только про число вместо рода.
+    """
+    tail = abs(n) % 100
+    if 11 <= tail <= 14:
+        return many
+    tail %= 10
+    if tail == 1:
+        return one
+    if 2 <= tail <= 4:
+        return few
+    return many
+
+
+def _unit_values() -> dict:
+    """Сколько стоит одна штука того, что можно заказать."""
+    from .cooking import RECIPES
+    from .farming import CROPS
+    from .fishing import SPECIES
+
+    fish = [s for s in SPECIES if s.key != "boot"]
+    per_fish = (sum(s.price * (s.size[0] + s.size[1]) / 2 * s.weight
+                    for s in fish) / sum(s.weight for s in fish))
+    values = {("harvest", k): float(c.sell_price) for k, c in CROPS.items()}
+    values[("fish", "")] = per_fish
+    values[("cook", "*")] = sum(r.sell_price for r in RECIPES) / len(RECIPES)
+    return values
+
+
+def next_commission(number: int, rng) -> "Quest":
+    """Следующий заказ со стойки — из того, что ферма уже умеет."""
+    from .cooking import RECIPES
+    from .farming import CROPS
+
+    values = _unit_values()
+    kind, target = rng.choice(sorted(values))
+    unit = values[(kind, target)]
+    goal = max(2, min(COMMISSION_MAX, round(COMMISSION_WORTH / unit)))
+    reward = int(round(goal * unit))
+    if kind == "harvest":
+        what = CROPS[target].name.lower()
+        detail = f"Соберите и принесите: {what} x{goal}."
+    elif kind == "fish":
+        detail = (f"Поймайте {goal} "
+                  + plural(goal, "рыбу", "рыбы", "рыб") + " — любых.")
+        what = "рыба"
+    else:
+        detail = (f"Приготовьте {goal} "
+                  + plural(goal, "блюдо", "блюда", "блюд") + " у котла.")
+        what = "готовое"
+    return Quest(f"{COMMISSION_KEY}_{number}", f"Заказ №{number}", detail,
+                 goal, reward, kind, target)
 
 
 ACHIEVEMENTS = {
@@ -349,6 +420,10 @@ class GameState:
         # Итоги года показываются один раз. Флаг живёт в сохранении:
         # иначе загрузка старой игры встречала бы игрока финалом.
         self.finale_shown = False
+        # Сколько заказов со стойки закрыто. Сами заказы сменяют друг
+        # друга, а счёт остаётся — на странице статистики.
+        self.commissions_done = 0
+        self.commission_rng = random.Random(20250807)
         self.best_fish: tuple[str, float] | None = None
 
     # ------------------------------------------------------------ inventory
@@ -509,6 +584,21 @@ class GameState:
                 self.notify(f"Задание выполнено: {q.title} (+{q.reward})")
         self.check_quests()
 
+    def offer_commission(self) -> bool:
+        """Если брать больше нечего — положить на стойку новый заказ."""
+        if any(not q.done for q in self.quests):
+            return False
+        # Счёт — накопительный. Пересчёт по списку, из которого заказы
+        # тут же и убираются, застревал на втором номере навсегда.
+        closed = [q for q in self.quests
+                  if q.key.startswith(COMMISSION_KEY)]
+        self.commissions_done += len(closed)
+        self.quests = [q for q in self.quests
+                       if not q.key.startswith(COMMISSION_KEY)]
+        self.quests.append(next_commission(self.commissions_done + 1,
+                                           self.commission_rng))
+        return True
+
     def check_quests(self):
         for q in self.quests:
             if q.kind == "coins" and not q.done:
@@ -517,6 +607,8 @@ class GameState:
                     q.done = True
                     self.coins += q.reward
                     self.notify(f"Задание выполнено: {q.title} (+{q.reward})")
+        if self.offer_commission():
+            self.notify(f"На стойке новый заказ: {self.quests[-1].title}")
 
     def unlock(self, key: str):
         if key in ACHIEVEMENTS and key not in self.achievements:
@@ -544,10 +636,12 @@ class GameState:
             "fish_log": self.fish_log,
             "total_earned": self.total_earned,
             "finale_shown": self.finale_shown,
+            "commissions_done": self.commissions_done,
             "best_fish": list(self.best_fish) if self.best_fish else None,
             "quests": [
                 {"key": q.key, "progress": q.progress, "done": q.done,
-                 "claimed": q.claimed}
+                 "title": q.title, "detail": q.detail, "goal": q.goal,
+                 "reward": q.reward, "kind": q.kind, "target": q.target}
                 for q in self.quests
             ],
         }
@@ -578,6 +672,7 @@ class GameState:
         self.achievements = {str(a) for a in as_list(data.get("achievements"))}
         self.play_time = as_float(data.get("play_time"))
         self.finale_shown = bool(data.get("finale_shown"))
+        self.commissions_done = as_int(data.get("commissions_done"))
         self.cooked = {str(k): as_int(v)
                        for k, v in as_dict(data.get("cooked")).items()}
         self.weeded = as_int(data.get("weeded"))
@@ -596,7 +691,19 @@ class GameState:
             if q:
                 q.progress = as_int(qd.get("progress"))
                 q.done = bool(qd.get("done", False))
-                q.claimed = bool(qd.get("claimed", False))
+            elif str(qd.get("key", "")).startswith(COMMISSION_KEY):
+                # Заказ со стойки придуман в прошлой игре, и в списке
+                # по умолчанию его нет — восстанавливать надо целиком,
+                # иначе он молча пропадает при загрузке.
+                self.quests.append(Quest(
+                    str(qd.get("key")), str(qd.get("title", "Заказ")),
+                    str(qd.get("detail", "")),
+                    max(1, as_int(qd.get("goal"), 1)),
+                    as_int(qd.get("reward")),
+                    str(qd.get("kind", "harvest")),
+                    str(qd.get("target", "*")),
+                    as_int(qd.get("progress")),
+                    bool(qd.get("done", False))))
 
 
 def save_game(state: GameState, farm, cycle, player, path: Path = SAVE_PATH,

@@ -362,6 +362,8 @@ class HUD:
                      f"{len(st.achievements)} из {len(ACHIEVEMENTS)}"))
         rows.append(("Заданий выполнено",
                      f"{sum(1 for q in st.quests if q.done)} из {len(st.quests)}"))
+        if st.commissions_done:
+            rows.append(("Заказов со стойки", f"{st.commissions_done}"))
         left = ["СТАТИСТИКА", ""] + [f"  {label}:" if label else "" for label, _ in rows]
         right = ["", ""] + [value for _, value in rows]
         return left, right
