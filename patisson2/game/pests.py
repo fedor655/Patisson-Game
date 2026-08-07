@@ -14,14 +14,8 @@ from .view import Vec3, place
 
 from ..world.layout import LAYOUT, plot_positions
 
-# --- weeds -------------------------------------------------------------------
-WEED_START = 0.22           # visible from here
-WEED_SLOW = 0.35            # growth starts suffering
-WEED_THIRST = 0.70          # and the weeds start drinking the plot dry
-
-# --- blight ------------------------------------------------------------------
-BLIGHT_SOGGY = 0.82         # water above this in the damp is asking for it
-BLIGHT_DAILY_CHANCE = 0.55  # per in-game day, per susceptible plot
+# Сорняки и гниль переехали в farming.py — туда, где грядка. Здесь
+# остались вороны и пугало.
 
 # --- crows -------------------------------------------------------------------
 CROW_INTERVAL = (28.0, 65.0)     # seconds of real time between attempts

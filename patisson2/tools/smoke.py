@@ -402,6 +402,98 @@ def run() -> int:
                 f"{season_days} дн.")
     check("у каждой культуры своя ниша", no_crop_is_dominated)
 
+    def weeds_and_rot_come_from_the_bed():
+        """Сорняки — работа на день, а гниль — следствие, а не погода.
+
+        Пороги сорняков были тремя голыми числами, и в игре они значили
+        мотыгу дважды в день на двадцать четыре грядки. Теперь они
+        выведены из срока, и проверяется именно срок — настоящей
+        симуляцией, а не повторным выводом тех же формул.
+
+        Гниль же заводилась от одного дождя. Дождь наполняет любую
+        грядку до краёв за секунды, так что сделать с этим было нельзя
+        ничего: гниль была уроном от погоды со счётом за золу. Теперь
+        сырость — только повод, а причина в грядке.
+        """
+        import random
+
+        from ..game.farming import (BLIGHT_RICH, PLANT_FOOD, PLANT_WATER,
+                                    TEND_WATER_AT, WEED_GRACE_SLOW,
+                                    WEED_GRACE_THIRST, WEED_SLOW, WEED_THIRST)
+        from ..net.world import SharedWorld
+
+        bad = []
+        world = SharedWorld()
+        farm = world.farm
+        farm.rng = random.Random(20250807)
+        bed = farm.plots[0]
+
+        def sow(food=PLANT_FOOD):
+            for p in farm.plots:
+                farm.clear(p)
+            farm.plant(bed, "wheat")
+            bed.weeds, bed.blight = 0.0, 0.0
+            bed.water, bed.food = PLANT_WATER, food
+
+        def run(days, raining=False, hoe_daily=False, keep_fed=False):
+            """Прожить столько-то дней, ухаживая как обычный игрок.
+
+            Возвращает (пик сорняков, случилась ли гниль). Именно
+            случилась: сгнившая грядка погибает, а clear() обнуляет
+            гниль — по состоянию в конце видно, что ничего не было.
+            """
+            step = 1.0 / 48.0
+            t = since_hoe = 0.0
+            peak = 0.0
+            rotted = False
+            while t < days:
+                for line in farm.update(step * farm.day_length, 0,
+                                        raining):
+                    rotted = rotted or "гниль" in line
+                if bed.water < TEND_WATER_AT:
+                    farm.water_plot(bed)
+                if keep_fed and bed.food < BLIGHT_RICH + 0.05:
+                    farm.feed_plot(bed)
+                peak = max(peak, bed.weeds)
+                t += step
+                since_hoe += step
+                if hoe_daily and since_hoe >= 1.0:
+                    since_hoe, _ = 0.0, farm.weed(bed)
+            return peak, rotted
+
+        sow()
+        peak, _ = run(6.0, hoe_daily=True)
+        if peak >= WEED_SLOW:
+            bad.append(f"грядка с мотыгой раз в день зарастает до {peak:.2f} "
+                       f"при пороге {WEED_SLOW}")
+        sow()
+        peak, _ = run(WEED_GRACE_SLOW * 0.9)
+        if peak >= WEED_SLOW:
+            bad.append(f"рост страдает раньше {WEED_GRACE_SLOW} дн.: {peak:.2f}")
+        sow()
+        peak, _ = run(WEED_GRACE_THIRST + 0.05)
+        if peak < WEED_THIRST:
+            bad.append(f"за {WEED_GRACE_THIRST} дн. сорняки не дошли до "
+                       f"{WEED_THIRST}: {peak:.2f}")
+
+        # Ухоженная грядка не гниёт даже под непрерывным дождём.
+        sow()
+        _, rotted = run(10.0, raining=True, hoe_daily=True)
+        if rotted:
+            bad.append("прополотая неудобренная грядка сгнила от одного дождя")
+        # А заброшенная — гниёт.
+        sow()
+        _, rotted = run(10.0, raining=True)
+        if not rotted:
+            bad.append("заросшая грядка под дождём не гниёт — гниль не работает")
+        # И перекормленная тоже.
+        sow(food=1.0)
+        _, rotted = run(10.0, raining=True, hoe_daily=True, keep_fed=True)
+        if not rotted:
+            bad.append("перекормленная грядка под дождём не гниёт")
+        assert not bad, "; ".join(bad)
+    check("сорняки и гниль — от грядки", weeds_and_rot_come_from_the_bed)
+
     def screenshots_are_the_ones_the_tool_makes():
         """Снимки в репозитории должны быть теми, что делает инструмент.
 

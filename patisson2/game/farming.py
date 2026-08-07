@@ -13,8 +13,6 @@ from dataclasses import dataclass
 
 from .view import Node, Vec3, place
 
-from .pests import (BLIGHT_DAILY_CHANCE, BLIGHT_SOGGY,
-                    WEED_SLOW, WEED_START, WEED_THIRST)
 
 
 @dataclass(frozen=True)
@@ -91,6 +89,61 @@ FOOD_DECAY = 0.85           # per in-game day
 WATER_DECAY = 1.35          # per day, before the crop's own thirst
 TEND_WATER_AT = 0.5         # a diligent player tops the can up here
 TEND_FOOD_AT = 0.6          # ... and keeps the bonus fruit within reach
+
+# --- weeds ------------------------------------------------------------------
+# Hoeing is meant to be a daily job, and the thresholds follow from that
+# rather than the other way round. They used to be three bare numbers —
+# 0.22, 0.35, 0.70 — which in play meant the tuft showed after nine game
+# hours, growth suffered after thirteen, and a bed left a day and a bit
+# was drinking itself dry: two rounds of the hoe a day across twenty-four
+# beds to avoid any penalty at all.
+#
+# What a designer actually decides is the grace period. The levels are
+# integrated from the same weed formula the farm runs, on a bed that is
+# watered and not fertilised — the way a bed is normally kept.
+WEED_GRACE_VISIBLE = 0.5    # half a day and the tuft shows
+WEED_GRACE_SLOW = 1.0       # a day without the hoe and growth suffers
+WEED_GRACE_THIRST = 1.5     # a day and a half and the weeds drink the bed
+
+
+def weed_rate(water: float, food: float) -> float:
+    """Weeds gained per in-game day. Damp, well-fed ground grows more."""
+    return 0.95 * (0.55 + 0.45 * water) * (0.7 + 0.3 * food)
+
+
+def _weeds_after(days: float, step: float = 1.0 / 240.0) -> float:
+    """How overgrown a normally-kept bed is after `days` of no hoeing.
+
+    No thirst multiplier here, and none is needed: it only applies above
+    WEED_THIRST, which is defined as the level at the longest grace
+    period, so it cannot have kicked in before then.
+    """
+    water, food, weeds, t = PLANT_WATER, PLANT_FOOD, 0.0, 0.0
+    while t < days:
+        weeds = min(1.0, weeds + step * weed_rate(water, food))
+        water = max(0.0, water - step * WATER_DECAY)
+        food = max(0.0, food - step * FOOD_DECAY)
+        if water < TEND_WATER_AT:
+            water = min(1.0, water + WATER_AMOUNT)
+        t += step
+    return round(weeds, 2)
+
+
+WEED_START = _weeds_after(WEED_GRACE_VISIBLE)    # 0.31 — visible from here
+WEED_SLOW = _weeds_after(WEED_GRACE_SLOW)        # 0.60 — growth suffers
+WEED_THIRST = _weeds_after(WEED_GRACE_THIRST)    # 0.90 — and they drink
+
+# --- blight -----------------------------------------------------------------
+# Rot takes hold in ground that is damp *and* neglected or overfed. Rain
+# alone used to be enough, and rain fills every bed to the brim in
+# seconds: there was nothing the player could do about it, so blight was
+# weather damage with an ash bill attached rather than a consequence of
+# anything. Now the damp is the trigger and the player's own bed is the
+# cause — let the weeds past the point where they already cost you
+# growth, or keep the soil rich, and it rots.
+BLIGHT_SOGGY = 0.82         # wet enough for it
+BLIGHT_RICH = 0.75          # fat enough for it
+BLIGHT_DAILY_CHANCE = 0.55  # per in-game day, per susceptible plot
 
 # One sack of fertiliser just before picking buys the bonus fruit: the
 # extra is granted when the bed is this healthy and this well fed at the
@@ -322,11 +375,11 @@ class Farm:
 
             crop = CROPS[plot.crop]
 
-            # Weeds creep in faster on damp, well-fed ground.
-            weed_rate = 0.95 * (0.55 + 0.45 * plot.water) * (0.7 + 0.3 * plot.food)
+            # Одна формула на всех: по ней же выведены пороги.
+            rate = weed_rate(plot.water, plot.food)
             if season == 3:
-                weed_rate *= 0.25            # little grows in winter
-            plot.weeds = min(1.0, plot.weeds + day_frac * weed_rate)
+                rate *= 0.25                 # little grows in winter
+            plot.weeds = min(1.0, plot.weeds + day_frac * rate)
 
             thirst = WATER_DECAY * crop.thirst
             if plot.weeds >= WEED_THIRST:
@@ -336,7 +389,9 @@ class Farm:
 
             # Blight takes hold in sodden beds, and spreads once it has.
             if plot.blight <= 0.0:
-                soggy = plot.water >= BLIGHT_SOGGY and (raining or plot.food > 0.75)
+                soggy = (plot.water >= BLIGHT_SOGGY
+                         and (plot.weeds >= WEED_SLOW
+                              or plot.food > BLIGHT_RICH))
                 if soggy and self.rng.random() < day_frac * BLIGHT_DAILY_CHANCE:
                     plot.blight = 0.35
             else:
