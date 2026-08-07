@@ -14,7 +14,10 @@ game engine, so this is the piece that can actually become an APK.
 
 from __future__ import annotations
 
+import json
+import os
 import sys
+import traceback
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -24,6 +27,7 @@ from kivy.graphics import Color, Ellipse, Line, Rectangle
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 
 try:                                    # inside the game's package
@@ -49,6 +53,29 @@ SEASONS = ["Весна", "Лето", "Осень", "Зима"]
 RETRY_SECONDS = 5.0
 WEATHER = {"clear": "Ясно", "cloudy": "Облачно", "rain": "Дождь",
            "snow": "Снег"}
+
+
+def _settings_path() -> str:
+    """Куда класть адрес фермы, чтобы не набирать его каждый раз."""
+    base = os.environ.get("ANDROID_PRIVATE") or os.path.expanduser("~")
+    return os.path.join(base, "patisson-phone.json")
+
+
+def load_settings() -> dict:
+    try:
+        with open(_settings_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:                       # noqa: BLE001
+        return {}
+
+
+def save_settings(data: dict) -> None:
+    try:
+        with open(_settings_path(), "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+    except Exception:                       # noqa: BLE001
+        pass                                # не за что тут падать
 
 
 class FarmView(Widget):
@@ -185,12 +212,83 @@ class FarmView(Widget):
 class PatissonMobile(App):
     title = "Патиссон гейм"
 
-    def __init__(self, host: str, port: int, name: str, **kwargs):
+    def __init__(self, host: str = "", port: int = DEFAULT_PORT,
+                 name: str = "Телефон", **kwargs):
         super().__init__(**kwargs)
-        self.link = FarmLink(host, port, name)
+        self.link = None
         self._retry_in = RETRY_SECONDS
+        saved = load_settings()
+        self.host = host or saved.get("host", "")
+        self.port = port or int(saved.get("port", DEFAULT_PORT))
+        self.player_name = name if name != "Телефон" else saved.get("name",
+                                                             "Телефон")
 
     def build(self):
+        """Сперва спросить, к какой ферме идём."""
+        Window.clearcolor = (0.08, 0.09, 0.07, 1)
+        self.screen = BoxLayout(orientation="vertical")
+        self._show_setup()
+        return self.screen
+
+    # --- экран подключения -------------------------------------------
+
+    def _show_setup(self, message: str = ""):
+        """Адрес фермы спрашивается здесь, и только здесь.
+
+        Раньше он брался из аргументов командной строки. На телефоне
+        их нет: приложение всегда стучалось в 127.0.0.1, где ничего
+        нет и быть не может, — то есть подключиться к ферме с
+        телефона было нельзя вообще никак.
+        """
+        self.screen.clear_widgets()
+        self.screen.add_widget(Label(text="Патиссон гейм", font_size=30,
+                                     size_hint=(1, None), height=90,
+                                     color=(1.0, 0.85, 0.42, 1)))
+        self.screen.add_widget(Label(
+            text=message or "Адрес фермы и ваше имя",
+            font_size=15, size_hint=(1, None), height=64,
+            color=((1.0, 0.6, 0.5, 1) if message else (0.8, 0.82, 0.8, 1))))
+        self.host_input = TextInput(
+            text=f"{self.host}:{self.port}" if self.host else "",
+            hint_text="адрес:порт", multiline=False, font_size=20,
+            size_hint=(1, None), height=64)
+        self.screen.add_widget(self.host_input)
+        self.player_name_input = TextInput(text=self.player_name, hint_text="имя",
+                                    multiline=False, font_size=20,
+                                    size_hint=(1, None), height=64)
+        self.screen.add_widget(self.player_name_input)
+        go = Button(text="На ферму", font_size=22,
+                    size_hint=(1, None), height=72)
+        go.bind(on_release=lambda _b: self._connect())
+        self.screen.add_widget(go)
+        self.screen.add_widget(Widget())        # пустое место снизу
+
+    def _connect(self):
+        address = (self.host_input.text or "").strip()
+        if not address:
+            self._show_setup("Впишите адрес фермы")
+            return
+        host, _, port = address.rpartition(":")
+        if not host:
+            host, port = address, str(DEFAULT_PORT)
+        try:
+            self.port = int(port or DEFAULT_PORT)
+        except ValueError:
+            self._show_setup(f"Порт «{port}» не число")
+            return
+        self.host = host
+        self.player_name = (self.player_name_input.text or "Телефон").strip()
+        save_settings({"host": self.host, "port": self.port,
+                       "name": self.player_name})
+        self.link = FarmLink(self.host, self.port, self.player_name)
+        self._retry_in = RETRY_SECONDS
+        self.screen.clear_widgets()
+        self.screen.add_widget(self._build_farm())
+        Clock.schedule_interval(self.tick, 1.0 / 20.0)
+
+    # --- экран фермы ---------------------------------------------------
+
+    def _build_farm(self):
         Window.clearcolor = (0.08, 0.09, 0.07, 1)
         root = BoxLayout(orientation="vertical")
         # Paint the frame ourselves rather than leaning on the window's
@@ -248,7 +346,6 @@ class PatissonMobile(App):
         self.scare_button = scare
         root.add_widget(farm_bar)
         self.pick_tool(0)
-        Clock.schedule_interval(self.tick, 1.0 / 20.0)
         return root
 
     def _fit_backdrop(self, widget, _value):
@@ -329,13 +426,41 @@ class PatissonMobile(App):
 
 
 def main(argv=None):
+    """Запуск. Адрес можно передать строкой, но телефон спросит сам."""
     argv = list(sys.argv[1:] if argv is None else argv)
-    address = argv[0] if argv else f"127.0.0.1:{DEFAULT_PORT}"
-    name = argv[1] if len(argv) > 1 else "Телефон"
-    host, _, port = address.rpartition(":")
-    if not host:
-        host, port = address, str(DEFAULT_PORT)
-    PatissonMobile(host, int(port or DEFAULT_PORT), name).run()
+    host, port, name = "", DEFAULT_PORT, "Телефон"
+    if argv:
+        host, _, tail = argv[0].rpartition(":")
+        if not host:
+            host, tail = argv[0], ""
+        port = int(tail or DEFAULT_PORT)
+    if len(argv) > 1:
+        name = argv[1]
+    try:
+        PatissonMobile(host, port, name).run()
+    except Exception:                       # noqa: BLE001
+        # На телефоне нет консоли: без этого приложение просто
+        # исчезает после заставки, и почему — не узнать никак.
+        _show_crash(traceback.format_exc())
+
+
+def _show_crash(text: str) -> None:
+    try:
+        with open(_settings_path() + ".crash", "w", encoding="utf-8") as fh:
+            fh.write(text)
+    except Exception:                       # noqa: BLE001
+        pass
+    try:
+        from kivy.app import App as _App
+
+        class Crash(_App):
+            def build(self):
+                return Label(text=text[-1500:], font_size=13,
+                             color=(1.0, 0.6, 0.5, 1))
+
+        Crash().run()
+    except Exception:                       # noqa: BLE001
+        sys.stderr.write(text)
 
 
 if __name__ == "__main__":

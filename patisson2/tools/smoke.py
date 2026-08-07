@@ -2001,6 +2001,29 @@ def run() -> int:
         assert "всё сходится" in out, f"неожиданный вывод: {out[-300:]}"
     check("двое на одной ферме", two_players_share_one_farm)
 
+    def the_phone_can_reach_a_farm():
+        """Телефон должен уметь дойти до фермы, а не только нарисовать её.
+
+        Адрес брался из аргументов командной строки. На телефоне их нет —
+        приложение всегда стучалось в 127.0.0.1, где ничего нет и быть не
+        может. То есть подключиться к ферме с телефона было нельзя вообще
+        никак, и ни одна проверка этого не замечала: все они смотрели на
+        связь (link.py), а экран никто не трогал.
+
+        Kivy забирает окно себе, поэтому — отдельным процессом.
+        """
+        import subprocess
+
+        root = Path(__file__).resolve().parents[2]
+        done = subprocess.run(
+            [sys.executable, "-X", "utf8", "-m", "patisson2.tools.phone_check"],
+            cwd=str(root), capture_output=True, text=True, timeout=300)
+        out = (done.stdout or "") + (done.stderr or "")
+        assert done.returncode == 0, \
+            f"телефон не дошёл до фермы:\n{out.strip()[-800:]}"
+        assert "всё сходится" in out, f"неожиданный вывод: {out[-300:]}"
+    check("телефон доходит до фермы", the_phone_can_reach_a_farm)
+
     def two_hands_on_one_bed():
         """Двое жмут на одну грядку, и амбар у них общий.
 

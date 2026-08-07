@@ -19,7 +19,7 @@ from pathlib import Path
 # сосед по папке.
 ALLOWED = {
     "json", "queue", "socket", "struct", "threading", "sys", "os", "time",
-    "math", "__future__",
+    "math", "traceback", "__future__",
     "kivy",
     "link",                       # плоская раскладка на телефоне
 }
