@@ -494,6 +494,41 @@ def run() -> int:
         assert not bad, "; ".join(bad)
     check("сорняки и гниль — от грядки", weeds_and_rot_come_from_the_bed)
 
+    def the_build_only_needs_files_the_repo_has():
+        """Сборка не может зависеть от файла, которого нет в репозитории.
+
+        android/buildozer.spec — весь рецепт APK — попал под правило
+        `*.spec`, написанное для PyInstaller. Файл лежал на диске, всё
+        выглядело собранным, а на сервере сборки его не было: задача
+        падала на `cp` через десять секунд, три пуша подряд, и никто не
+        сказал ни слова — `git add -A` пропускает игнорируемое молча.
+        """
+        import re
+        import subprocess
+
+        root = Path(__file__).resolve().parents[2]
+        flow = root / ".github" / "workflows" / "apk.yml"
+        assert flow.exists(), "файл сборки APK пропал"
+        text = flow.read_text(encoding="utf-8")
+        # Пути, которые задача копирует или запускает у себя в дереве.
+        wanted = set(re.findall(r"(?:cp|python)\s+\"?\$?\{?[A-Z_]*\}?/?"
+                                r"([a-zA-Z0-9_./-]+\.(?:py|spec|png|ico))",
+                                text))
+        wanted |= set(re.findall(r"^\s*-\s+\"?([a-zA-Z0-9_./-]+"
+                                 r"\.(?:py|spec|png|ico))\"?\s*$",
+                                 text, re.M))
+        assert len(wanted) >= 4, f"разбор сборки нашёл только {wanted}"
+        tracked = set(subprocess.run(
+            ["git", "ls-files"], cwd=str(root),
+            capture_output=True, text=True, timeout=120).stdout.split())
+        assert tracked, "git не отдал список файлов — проверка бы прошла впустую"
+        missing = sorted(p for p in wanted if p not in tracked)
+        assert not missing, (
+            "сборке нужны файлы, которых нет в репозитории: "
+            + ", ".join(missing))
+    check("сборке хватает того, что в репозитории",
+          the_build_only_needs_files_the_repo_has)
+
     def screenshots_are_the_ones_the_tool_makes():
         """Снимки в репозитории должны быть теми, что делает инструмент.
 

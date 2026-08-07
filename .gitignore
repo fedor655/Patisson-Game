@@ -24,7 +24,12 @@ resources/
 build/
 dist/
 *.exe
+# PyInstaller writes its own .spec next to the build. This rule quietly ate
+# android/buildozer.spec — the file that describes the whole APK — so the
+# CI job failed on `cp` ten seconds in, three pushes running, and nothing
+# said a word: `git add -A` skips ignored files in silence.
 *.spec
+!android/buildozer.spec
 
 # OS / editors
 .DS_Store
