@@ -662,10 +662,17 @@ def run() -> int:
         names = re.findall(r'shot\(\s*"([^"]+)"', source)
         assert len(names) >= 20, \
             f"в shots.py нашлось всего {len(names)} снимков — разбор сломался"
+        # Это проверка репозитория, а не игры: снимки — документация, и в
+        # поставку игрока они не едут вместе с ней. Там ей нечего сказать,
+        # и она молчит вместо того, чтобы ругаться на отсутствие того,
+        # чего там и не должно быть.
+        if not (root / ".git").exists():
+            return
         tracked = set(subprocess.run(
-            ["git", "ls-files", "screenshots2", "media"], cwd=str(root),
-            capture_output=True, text=True, timeout=120).stdout.split())
-        assert tracked, "git не отдал список файлов — проверка бы прошла впустую"
+            ["git", "ls-files", "screenshots2", "media"],
+            cwd=str(root), capture_output=True, text=True,
+            timeout=120).stdout.split())
+        assert tracked, "git не отдал список — проверка была бы пустой"
         for name in names:
             want = f"screenshots2/{Path(name).with_suffix('.jpg').name}"
             if want not in tracked:
